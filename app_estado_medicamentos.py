@@ -10,7 +10,7 @@ import hashlib
 st.set_page_config(page_title="Control de Estado de Medicamentos", layout="wide")
 
 # ---------------- DIRECTORIOS ----------------
-BASE_DIR = "."  # Carpeta del proyecto, escribible en Streamlit Cloud
+BASE_DIR = "."  # Carpeta del proyecto
 DATA_FILE = os.path.join(BASE_DIR, "registros_medicamentos.csv")
 USERS_FILE = os.path.join(BASE_DIR, "usuarios.csv")
 SOPORTES_DIR = os.path.join(BASE_DIR, "soportes")
@@ -20,6 +20,7 @@ os.makedirs(SOPORTES_DIR, exist_ok=True)
 expected_columns = ["Consecutivo","Usuario", "Estado", "PLU", "Código Genérico",
                     "Nombre Medicamento", "Laboratorio", "Fecha", "Soporte"]
 
+# Registros
 if os.path.exists(DATA_FILE):
     df_registros = pd.read_csv(DATA_FILE)
     for col in expected_columns:
@@ -30,6 +31,7 @@ else:
     df_registros = pd.DataFrame(columns=expected_columns)
     df_registros.to_csv(DATA_FILE, index=False)
 
+# Usuarios
 if os.path.exists(USERS_FILE):
     df_usuarios = pd.read_csv(USERS_FILE)
 else:
@@ -64,12 +66,12 @@ def obtener_consecutivo():
         return int(df_registros["Consecutivo"].max()) + 1
 
 def mostrar_pdf(soporte_path):
-    """Mostrar PDF y botón de descarga con key único seguro"""
+    """Mostrar PDF y botón de descarga con key único"""
     if os.path.exists(soporte_path):
         st.markdown(f'<a href="file:///{soporte_path}" target="_blank">📄 Abrir PDF</a>', unsafe_allow_html=True)
         with open(soporte_path, "rb") as f:
             pdf_data = f.read()
-        # Generar key único estable con hash del path
+        # Key único basado en hash de la ruta
         key_hash = hashlib.md5(soporte_path.encode()).hexdigest()
         st.download_button(
             label="📥 Descargar PDF",
@@ -151,6 +153,7 @@ if st.session_state["usuario"]:
         soporte_file = st.file_uploader("📎 Subir soporte PDF", type=["pdf"], key="soporte_file")
         st.date_input("Fecha", value=datetime.now(), disabled=True)
 
+        # Guardar PDF
         if soporte_file and nombre.strip():
             timestamp = int(datetime.now().timestamp())
             nombre_pdf = f"{consecutivo}_{usuario}_{nombre_valido_archivo(nombre)}_{timestamp}.pdf"
@@ -158,8 +161,12 @@ if st.session_state["usuario"]:
             with open(pdf_path, "wb") as f:
                 f.write(soporte_file.getbuffer())
             st.session_state["ultimo_pdf_path"] = pdf_path
-            st.markdown("### PDF disponible")
-            mostrar_pdf(pdf_path)
+            st.success("PDF subido ✅")
+
+        # Botón para mostrar / descargar PDF (evita duplicate keys)
+        if "ultimo_pdf_path" in st.session_state:
+            if st.button("Mostrar / Descargar PDF"):
+                mostrar_pdf(st.session_state["ultimo_pdf_path"])
 
         col1, col2 = st.columns([1,1])
         if col1.button("💾 Guardar registro"):
@@ -175,7 +182,6 @@ if st.session_state["usuario"]:
                 df_registros = pd.concat([df_registros, new_row], ignore_index=True)
                 save_registros(df_registros)
                 st.success("✅ Registro guardado")
-                mostrar_pdf(st.session_state["ultimo_pdf_path"])
                 limpiar_formulario()
 
         if col2.button("🧹 Limpiar formulario"):
