@@ -4,7 +4,7 @@ import os
 from datetime import datetime
 import base64
 import re
-import time
+import hashlib
 
 # ---------------- CONFIGURACIÓN ----------------
 st.set_page_config(page_title="Control de Estado de Medicamentos", layout="wide")
@@ -14,13 +14,12 @@ BASE_DIR = "."  # Carpeta del proyecto, escribible en Streamlit Cloud
 DATA_FILE = os.path.join(BASE_DIR, "registros_medicamentos.csv")
 USERS_FILE = os.path.join(BASE_DIR, "usuarios.csv")
 SOPORTES_DIR = os.path.join(BASE_DIR, "soportes")
-os.makedirs(SOPORTES_DIR, exist_ok=True)  # Crear carpeta si no existe
+os.makedirs(SOPORTES_DIR, exist_ok=True)
 
 # ---------------- CARGAR O CREAR ARCHIVOS ----------------
 expected_columns = ["Consecutivo","Usuario", "Estado", "PLU", "Código Genérico",
                     "Nombre Medicamento", "Laboratorio", "Fecha", "Soporte"]
 
-# Registros
 if os.path.exists(DATA_FILE):
     df_registros = pd.read_csv(DATA_FILE)
     for col in expected_columns:
@@ -31,7 +30,6 @@ else:
     df_registros = pd.DataFrame(columns=expected_columns)
     df_registros.to_csv(DATA_FILE, index=False)
 
-# Usuarios
 if os.path.exists(USERS_FILE):
     df_usuarios = pd.read_csv(USERS_FILE)
 else:
@@ -66,17 +64,19 @@ def obtener_consecutivo():
         return int(df_registros["Consecutivo"].max()) + 1
 
 def mostrar_pdf(soporte_path):
-    """Mostrar PDF y botón de descarga con key único"""
+    """Mostrar PDF y botón de descarga con key único seguro"""
     if os.path.exists(soporte_path):
         st.markdown(f'<a href="file:///{soporte_path}" target="_blank">📄 Abrir PDF</a>', unsafe_allow_html=True)
         with open(soporte_path, "rb") as f:
             pdf_data = f.read()
+        # Generar key único estable con hash del path
+        key_hash = hashlib.md5(soporte_path.encode()).hexdigest()
         st.download_button(
             label="📥 Descargar PDF",
             data=pdf_data,
             file_name=os.path.basename(soporte_path),
             mime="application/pdf",
-            key=f"download_{os.path.basename(soporte_path)}_{int(time.time())}"
+            key=f"download_{key_hash}"
         )
 
 def descargar_csv(df):
@@ -152,7 +152,7 @@ if st.session_state["usuario"]:
         st.date_input("Fecha", value=datetime.now(), disabled=True)
 
         if soporte_file and nombre.strip():
-            timestamp = int(time.time())
+            timestamp = int(datetime.now().timestamp())
             nombre_pdf = f"{consecutivo}_{usuario}_{nombre_valido_archivo(nombre)}_{timestamp}.pdf"
             pdf_path = os.path.join(SOPORTES_DIR, nombre_pdf)
             with open(pdf_path, "wb") as f:
@@ -188,12 +188,13 @@ if st.session_state["usuario"]:
         descargar_csv(df_registros)
         for idx, row in df_registros.iterrows():
             if os.path.exists(row["Soporte"]):
+                key_hash = hashlib.md5(row["Soporte"].encode()).hexdigest()
                 st.download_button(
                     label=f"📥 Descargar {os.path.basename(row['Soporte'])}",
                     data=open(row["Soporte"], "rb").read(),
                     file_name=os.path.basename(row["Soporte"]),
                     mime="application/pdf",
-                    key=f"download_consolidado_{idx}_{int(time.time())}"
+                    key=f"download_consolidado_{key_hash}"
                 )
 
     # -------- TAB BUSCAR REGISTRO --------
