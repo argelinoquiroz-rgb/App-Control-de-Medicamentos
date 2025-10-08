@@ -202,5 +202,9 @@ if st.session_state["usuario"]:
                 limpiar_formulario()
 
         if col2.button("🧹 Limpiar formulario"):
-    limpiar_formulario()
-    st.success("Formulario limpiado ✅")
+            limpiar_formulario()
+            st.success("Formulario limpiado ✅")
+
+    # -------- TAB CONSOLIDADO --------
+    with tabs[1]:
+        st.dataframe(df_registros
