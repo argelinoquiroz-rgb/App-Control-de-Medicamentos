@@ -145,7 +145,6 @@ if "usuario" in st.session_state:
     # -------- TAB REGISTRO --------
     with tabs[0]:
         consecutivo = obtener_consecutivo()
-        st.markdown(f"**Consecutivo: {consecutivo}**")
         estado = st.selectbox("Estado", ["Agotado", "Desabastecido", "Descontinuado"], index=0, key="estado")
         plu = st.text_input("PLU", key="plu").upper()
         codigo_gen_default = plu.split("_")[0] if "_" in plu else ""
