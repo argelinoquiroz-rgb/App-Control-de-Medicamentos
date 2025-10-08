@@ -201,4 +201,6 @@ if st.session_state["usuario"]:
                 st.success("✅ Registro guardado en Drive")
                 limpiar_formulario()
 
-        if col2.button("🧹 Limpiar
+        if col2.button("🧹 Limpiar formulario"):
+    limpiar_formulario()
+    st.success("Formulario limpiado ✅")
