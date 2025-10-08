@@ -7,6 +7,7 @@ from pydrive.auth import GoogleAuth
 from pydrive.drive import GoogleDrive
 import io
 import base64
+import os
 
 # ---------------- CONFIGURACIÓN ----------------
 st.set_page_config(page_title="Control de Estado de Medicamentos", layout="wide")
@@ -200,20 +201,4 @@ if st.session_state["usuario"]:
                 st.success("✅ Registro guardado en Drive")
                 limpiar_formulario()
 
-        if col2.button("🧹 Limpiar formulario"):
-            limpiar_formulario()
-            st.success("Formulario limpiado ✅")
-
-    # -------- TAB CONSOLIDADO --------
-    with tabs[1]:
-        st.dataframe(df_registros)
-        descargar_csv(df_registros)
-        for idx, row in df_registros.iterrows():
-            mostrar_pdf_drive(row["SoporteID"], row["SoporteNombre"])
-
-    # -------- TAB BUSCAR REGISTRO --------
-    with tabs[2]:
-        busqueda = st.text_input("Buscar cualquier campo")
-        if busqueda:
-            df_filtrado = df_registros[df_registros.apply(lambda row: row.astype(str).str.contains(busqueda, case=False).any(), axis=1)]
-            st.dataframe(df_filtrado)
+        if col2.button("🧹 Limpiar
