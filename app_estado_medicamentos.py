@@ -79,61 +79,55 @@ def descargar_csv(df):
 # ---------------- SESIÓN ----------------
 st.sidebar.header("🔐 Inicio de sesión")
 
-# Manejo seguro de rerun
-if "rerun_flag" not in st.session_state:
-    st.session_state["rerun_flag"] = False
+if "usuario" not in st.session_state:
+    st.session_state["usuario"] = None
 
-if "usuario" in st.session_state:
-    st.sidebar.success(f"Sesión iniciada: {st.session_state['usuario']}")
-    if st.sidebar.button("Cerrar sesión"):
-        st.session_state.clear()
-        st.experimental_rerun()
-else:
-    usuario_input = st.sidebar.text_input("Usuario (nombre.apellido)").strip().lower()
-    contrasena_input = st.sidebar.text_input("Contraseña", type="password")
-    if st.sidebar.button("Ingresar"):
-        if usuario_input in df_usuarios["usuario"].values:
-            stored_pass = df_usuarios.loc[df_usuarios["usuario"] == usuario_input, "contrasena"].values[0]
-            if contrasena_input == stored_pass:
-                st.session_state["usuario"] = usuario_input
-                st.session_state["rerun_flag"] = True
-            else:
-                st.sidebar.error("Contraseña incorrecta")
+usuario_input = st.sidebar.text_input("Usuario (nombre.apellido)").strip().lower()
+contrasena_input = st.sidebar.text_input("Contraseña", type="password")
+
+# Login
+if st.sidebar.button("Ingresar"):
+    if usuario_input in df_usuarios["usuario"].values:
+        stored_pass = df_usuarios.loc[df_usuarios["usuario"] == usuario_input, "contrasena"].values[0]
+        if contrasena_input == stored_pass:
+            st.session_state["usuario"] = usuario_input
         else:
-            st.sidebar.error("Usuario no registrado")
+            st.sidebar.error("Contraseña incorrecta")
+    else:
+        st.sidebar.error("Usuario no registrado")
 
-    # Crear nuevo usuario
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### Crear nuevo usuario")
-    nombre_usuario_nuevo = st.sidebar.text_input("Usuario (nombre.apellido)", key="usuario_nuevo").strip().lower()
-    correo_nuevo = st.sidebar.text_input("Correo electrónico", key="correo_nuevo").strip().lower()
-    contrasena_nueva = st.sidebar.text_input("Contraseña", type="password", key="pass_nueva")
-    if st.sidebar.button("Crear usuario"):
-        if not correo_nuevo or not contrasena_nueva or not nombre_usuario_nuevo:
-            st.sidebar.error("Debes ingresar usuario, correo y contraseña")
-        elif not correo_nuevo.endswith("@pharmaser.com.co"):
-            st.sidebar.error("El correo debe terminar en @pharmaser.com.co")
-        elif correo_nuevo in df_usuarios["correo"].values:
-            st.sidebar.error("Este correo ya está registrado")
-        elif nombre_usuario_nuevo in df_usuarios["usuario"].values:
-            st.sidebar.error("Este usuario ya existe")
-        else:
-            df_usuarios = pd.concat([df_usuarios, pd.DataFrame([{
-                "usuario": nombre_usuario_nuevo,
-                "contrasena": contrasena_nueva,
-                "correo": correo_nuevo
-            }])], ignore_index=True)
-            save_usuarios(df_usuarios)
-            st.sidebar.success(f"Usuario creado: {nombre_usuario_nuevo}")
-
-# Manejo seguro de rerun
-if st.session_state.get("rerun_flag", False):
-    st.session_state["rerun_flag"] = False
-    st.experimental_rerun()
+# Crear nuevo usuario
+st.sidebar.markdown("---")
+st.sidebar.markdown("### Crear nuevo usuario")
+nombre_usuario_nuevo = st.sidebar.text_input("Usuario (nombre.apellido)", key="usuario_nuevo").strip().lower()
+correo_nuevo = st.sidebar.text_input("Correo electrónico", key="correo_nuevo").strip().lower()
+contrasena_nueva = st.sidebar.text_input("Contraseña", type="password", key="pass_nueva")
+if st.sidebar.button("Crear usuario"):
+    if not correo_nuevo or not contrasena_nueva or not nombre_usuario_nuevo:
+        st.sidebar.error("Debes ingresar usuario, correo y contraseña")
+    elif not correo_nuevo.endswith("@pharmaser.com.co"):
+        st.sidebar.error("El correo debe terminar en @pharmaser.com.co")
+    elif correo_nuevo in df_usuarios["correo"].values:
+        st.sidebar.error("Este correo ya está registrado")
+    elif nombre_usuario_nuevo in df_usuarios["usuario"].values:
+        st.sidebar.error("Este usuario ya existe")
+    else:
+        df_usuarios = pd.concat([df_usuarios, pd.DataFrame([{
+            "usuario": nombre_usuario_nuevo,
+            "contrasena": contrasena_nueva,
+            "correo": correo_nuevo
+        }])], ignore_index=True)
+        save_usuarios(df_usuarios)
+        st.sidebar.success(f"Usuario creado: {nombre_usuario_nuevo}")
 
 # ---------------- INTERFAZ ----------------
-if "usuario" in st.session_state:
+if st.session_state["usuario"]:
     usuario = st.session_state["usuario"]
+    st.sidebar.success(f"Sesión iniciada: {usuario}")
+    if st.sidebar.button("Cerrar sesión"):
+        st.session_state["usuario"] = None
+        st.experimental_rerun()
+
     st.markdown(f"### Hola, **{usuario}**")
     tabs = st.tabs(["Registrar medicamento", "Consolidado general", "Buscar registro"])
 
