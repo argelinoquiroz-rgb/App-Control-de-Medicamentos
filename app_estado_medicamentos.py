@@ -171,7 +171,6 @@ if st.session_state["usuario"]:
         soporte_file = st.file_uploader("📎 Subir soporte PDF", type=["pdf"], key="soporte_file")
         st.date_input("Fecha", value=datetime.now(), disabled=True)
 
-        # Guardar PDF en Drive
         if soporte_file and nombre.strip():
             nombre_pdf = f"{consecutivo}_{usuario}_{re.sub(r'[^A-Za-z0-9_]', '', nombre.upper())}.pdf"
             pdf_id = upload_pdf_to_drive(soporte_file, nombre_pdf)
@@ -186,4 +185,35 @@ if st.session_state["usuario"]:
         col1, col2 = st.columns([1,1])
         if col1.button("💾 Guardar registro"):
             if not nombre.strip():
-                st.warning("Debes ingresar el nombre
+                st.warning("Debes ingresar el nombre del medicamento")
+            elif "ultimo_pdf_id" not in st.session_state:
+                st.warning("Debes subir un PDF")
+            else:
+                new_row = pd.DataFrame([[
+                    consecutivo, usuario, estado, plu, codigo_gen,
+                    nombre, laboratorio, datetime.now().strftime("%Y-%m-%d"),
+                    st.session_state["ultimo_pdf_id"],
+                    st.session_state["ultimo_pdf_name"]
+                ]], columns=df_registros.columns)
+                df_registros = pd.concat([df_registros, new_row], ignore_index=True)
+                save_registros_drive(df_registros)
+                st.success("✅ Registro guardado en Drive")
+                limpiar_formulario()
+
+        if col2.button("🧹 Limpiar formulario"):
+            limpiar_formulario()
+            st.success("Formulario limpiado ✅")
+
+    # -------- TAB CONSOLIDADO --------
+    with tabs[1]:
+        st.dataframe(df_registros)
+        descargar_csv(df_registros)
+        for idx, row in df_registros.iterrows():
+            mostrar_pdf_drive(row["SoporteID"], row["SoporteNombre"])
+
+    # -------- TAB BUSCAR REGISTRO --------
+    with tabs[2]:
+        busqueda = st.text_input("Buscar cualquier campo")
+        if busqueda:
+            df_filtrado = df_registros[df_registros.apply(lambda row: row.astype(str).str.contains(busqueda, case=False).any(), axis=1)]
+            st.dataframe(df_filtrado)
