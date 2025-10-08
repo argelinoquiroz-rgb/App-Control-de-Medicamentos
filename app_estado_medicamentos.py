@@ -125,8 +125,9 @@ if "usuario" in st.session_state:
     st.markdown(f"### Hola, **{usuario}**")
     tabs = st.tabs(["Registrar medicamento", "Consolidado general", "Buscar registro"])
 
-    # -------- TAB REGISTRO --------
+    # -------- TAB REGISTRO (solo registros del usuario actual) --------
     with tabs[0]:
+        df_usuario = df_registros[df_registros["Usuario"] == usuario]
         consecutivo = obtener_consecutivo()
         estado = st.selectbox("Estado", ["Agotado", "Desabastecido", "Descontinuado"], index=0, key="estado")
         plu = st.text_input("PLU", key="plu").upper()
@@ -138,7 +139,9 @@ if "usuario" in st.session_state:
         st.date_input("Fecha", value=datetime.now(), disabled=True)
 
         if soporte_file and nombre.strip():
-            nombre_pdf = f"{consecutivo}_{nombre_valido_archivo(nombre)}.pdf"
+            # Nombre único para evitar sobrescribir
+            timestamp = int(time.time())
+            nombre_pdf = f"{consecutivo}_{usuario}_{nombre_valido_archivo(nombre)}_{timestamp}.pdf"
             pdf_path = os.path.join(SOPORTES_DIR, nombre_pdf)
             with open(pdf_path, "wb") as f:
                 f.write(soporte_file.getbuffer())
@@ -167,7 +170,7 @@ if "usuario" in st.session_state:
             limpiar_formulario()
             st.success("Formulario limpiado ✅")
 
-    # -------- TAB CONSOLIDADO --------
+    # -------- TAB CONSOLIDADO (todos los usuarios) --------
     with tabs[1]:
         st.dataframe(df_registros)
         descargar_csv(df_registros)
@@ -181,19 +184,4 @@ if "usuario" in st.session_state:
                     key=f"download_{idx}"
                 )
 
-    # -------- TAB BUSCAR --------
-    with tabs[2]:
-        st.markdown("### Buscar registros")
-        busqueda = st.text_input("Ingrese texto a buscar en cualquier campo").upper()
-        if busqueda:
-            df_filtrado = df_registros[df_registros.apply(lambda row: row.astype(str).str.upper().str.contains(busqueda).any(), axis=1)]
-            st.dataframe(df_filtrado)
-            for idx, row in df_filtrado.iterrows():
-                if os.path.exists(row["Soporte"]):
-                    st.download_button(
-                        label=f"📥 Descargar {os.path.basename(row['Soporte'])}",
-                        data=open(row["Soporte"], "rb").read(),
-                        file_name=os.path.basename(row["Soporte"]),
-                        mime="application/pdf",
-                        key=f"busq_download_{idx}"
-                    )
+    # -------- TAB BUS
