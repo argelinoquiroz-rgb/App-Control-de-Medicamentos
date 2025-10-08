@@ -10,11 +10,11 @@ import time
 st.set_page_config(page_title="Control de Estado de Medicamentos", layout="wide")
 
 # ---------------- DIRECTORIOS ----------------
-BASE_DIR = "/mnt/data"
+BASE_DIR = "."  # carpeta del proyecto, escribible en Streamlit Cloud
 DATA_FILE = os.path.join(BASE_DIR, "registros_medicamentos.csv")
 USERS_FILE = os.path.join(BASE_DIR, "usuarios.csv")
 SOPORTES_DIR = os.path.join(BASE_DIR, "soportes")
-os.makedirs(SOPORTES_DIR, exist_ok=True)
+os.makedirs(SOPORTES_DIR, exist_ok=True)  # se asegura de que exista la carpeta
 
 # ---------------- CARGAR O CREAR ARCHIVOS ----------------
 expected_columns = ["Consecutivo","Usuario", "Estado", "PLU", "Código Genérico",
@@ -184,4 +184,9 @@ if "usuario" in st.session_state:
                     key=f"download_{idx}"
                 )
 
-    # -------- TAB BUS
+    # -------- TAB BUSCAR REGISTRO --------
+    with tabs[2]:
+        busqueda = st.text_input("Buscar cualquier campo")
+        if busqueda:
+            df_filtrado = df_registros[df_registros.apply(lambda row: row.astype(str).str.contains(busqueda, case=False).any(), axis=1)]
+            st.dataframe(df_filtrado)
