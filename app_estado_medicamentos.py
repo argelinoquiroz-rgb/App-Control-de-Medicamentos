@@ -9,8 +9,8 @@ import time
 # ---------------- CONFIGURACIÓN ----------------
 st.set_page_config(page_title="Control de Estado de Medicamentos", layout="wide")
 
-# Directorios (ruta fija en tu PC)
-BASE_DIR = r"C:\Users\lidercompras\OneDrive - pharmaser.com.co\Documentos\Reportes\01_Informes Power BI\01_Analisis de Solicitudes y Ordenes de Compras\Actualiza Informes Phyton\control_estado_medicamentos"
+# Directorios (rutas relativas al proyecto, para funcionar en la nube)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, "registros_medicamentos.csv")
 USERS_FILE = os.path.join(BASE_DIR, "usuarios.csv")
 SOPORTES_DIR = os.path.join(BASE_DIR, "soportes")
@@ -76,7 +76,6 @@ def obtener_consecutivo():
 
 def mostrar_pdf_en_pestana(soporte_path):
     if os.path.exists(soporte_path):
-        st.markdown(f'<a href="file:///{soporte_path}" target="_blank">📄 Abrir PDF</a>', unsafe_allow_html=True)
         unique_key = f"download_{os.path.basename(soporte_path)}_{int(time.time()*1000)}"
         with open(soporte_path, "rb") as f:
             pdf_data = f.read()
@@ -144,7 +143,6 @@ if "usuario" in st.session_state:
 
     # -------- TAB REGISTRO --------
     with tabs[0]:
-        consecutivo = obtener_consecutivo()
         estado = st.selectbox("Estado", ["Agotado", "Desabastecido", "Descontinuado"], index=0, key="estado")
         plu = st.text_input("PLU", key="plu").upper()
         codigo_gen_default = plu.split("_")[0] if "_" in plu else ""
@@ -155,6 +153,7 @@ if "usuario" in st.session_state:
         st.date_input("Fecha", value=datetime.now(), disabled=True)
 
         if soporte_file is not None and nombre.strip():
+            consecutivo = obtener_consecutivo()
             nombre_pdf = f"{consecutivo}_{nombre_valido_archivo(nombre)}.pdf"
             pdf_path = os.path.join(SOPORTES_DIR, nombre_pdf)
             with open(pdf_path, "wb") as f:
@@ -170,14 +169,14 @@ if "usuario" in st.session_state:
             elif "ultimo_pdf_path" not in st.session_state:
                 st.warning("Debes subir un PDF")
             else:
+                consecutivo = obtener_consecutivo()
                 new_row = pd.DataFrame([[
                     consecutivo, usuario, estado, plu, codigo_gen,
                     nombre, laboratorio, datetime.now().strftime("%Y-%m-%d"), st.session_state["ultimo_pdf_path"]
                 ]], columns=df_registros.columns)
                 df_registros = pd.concat([df_registros, new_row], ignore_index=True)
                 save_registros(df_registros)
-                st.success("✅ Registro guardado")
-                mostrar_pdf_en_pestana(st.session_state["ultimo_pdf_path"])
+                st.success("✅ Registro guardado correctamente")
                 limpiar_formulario()
 
         if col2.button("🧹 Limpiar formulario"):
@@ -202,3 +201,4 @@ if "usuario" in st.session_state:
                     mime="application/pdf",
                     key=f"download_{idx}"
                 )
+
