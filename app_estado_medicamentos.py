@@ -10,11 +10,11 @@ import time
 st.set_page_config(page_title="Control de Estado de Medicamentos", layout="wide")
 
 # ---------------- DIRECTORIOS ----------------
-BASE_DIR = "."  # carpeta del proyecto, escribible en Streamlit Cloud
+BASE_DIR = "."  # Carpeta del proyecto, escribible en Streamlit Cloud
 DATA_FILE = os.path.join(BASE_DIR, "registros_medicamentos.csv")
 USERS_FILE = os.path.join(BASE_DIR, "usuarios.csv")
 SOPORTES_DIR = os.path.join(BASE_DIR, "soportes")
-os.makedirs(SOPORTES_DIR, exist_ok=True)  # se asegura de que exista la carpeta
+os.makedirs(SOPORTES_DIR, exist_ok=True)  # Crear carpeta si no existe
 
 # ---------------- CARGAR O CREAR ARCHIVOS ----------------
 expected_columns = ["Consecutivo","Usuario", "Estado", "PLU", "Código Genérico",
@@ -78,6 +78,11 @@ def descargar_csv(df):
 
 # ---------------- SESIÓN ----------------
 st.sidebar.header("🔐 Inicio de sesión")
+
+# Manejo seguro de rerun
+if "rerun_flag" not in st.session_state:
+    st.session_state["rerun_flag"] = False
+
 if "usuario" in st.session_state:
     st.sidebar.success(f"Sesión iniciada: {st.session_state['usuario']}")
     if st.sidebar.button("Cerrar sesión"):
@@ -91,11 +96,13 @@ else:
             stored_pass = df_usuarios.loc[df_usuarios["usuario"] == usuario_input, "contrasena"].values[0]
             if contrasena_input == stored_pass:
                 st.session_state["usuario"] = usuario_input
-                st.experimental_rerun()
+                st.session_state["rerun_flag"] = True
             else:
                 st.sidebar.error("Contraseña incorrecta")
         else:
             st.sidebar.error("Usuario no registrado")
+
+    # Crear nuevo usuario
     st.sidebar.markdown("---")
     st.sidebar.markdown("### Crear nuevo usuario")
     nombre_usuario_nuevo = st.sidebar.text_input("Usuario (nombre.apellido)", key="usuario_nuevo").strip().lower()
@@ -119,13 +126,18 @@ else:
             save_usuarios(df_usuarios)
             st.sidebar.success(f"Usuario creado: {nombre_usuario_nuevo}")
 
+# Manejo seguro de rerun
+if st.session_state.get("rerun_flag", False):
+    st.session_state["rerun_flag"] = False
+    st.experimental_rerun()
+
 # ---------------- INTERFAZ ----------------
 if "usuario" in st.session_state:
     usuario = st.session_state["usuario"]
     st.markdown(f"### Hola, **{usuario}**")
     tabs = st.tabs(["Registrar medicamento", "Consolidado general", "Buscar registro"])
 
-    # -------- TAB REGISTRO (solo registros del usuario actual) --------
+    # -------- TAB REGISTRO --------
     with tabs[0]:
         df_usuario = df_registros[df_registros["Usuario"] == usuario]
         consecutivo = obtener_consecutivo()
@@ -139,7 +151,6 @@ if "usuario" in st.session_state:
         st.date_input("Fecha", value=datetime.now(), disabled=True)
 
         if soporte_file and nombre.strip():
-            # Nombre único para evitar sobrescribir
             timestamp = int(time.time())
             nombre_pdf = f"{consecutivo}_{usuario}_{nombre_valido_archivo(nombre)}_{timestamp}.pdf"
             pdf_path = os.path.join(SOPORTES_DIR, nombre_pdf)
@@ -170,7 +181,7 @@ if "usuario" in st.session_state:
             limpiar_formulario()
             st.success("Formulario limpiado ✅")
 
-    # -------- TAB CONSOLIDADO (todos los usuarios) --------
+    # -------- TAB CONSOLIDADO --------
     with tabs[1]:
         st.dataframe(df_registros)
         descargar_csv(df_registros)
