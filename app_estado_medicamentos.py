@@ -207,4 +207,4 @@ if st.session_state["usuario"]:
 
     # -------- TAB CONSOLIDADO --------
     with tabs[1]:
-        st.dataframe(df_registros
+        st.dataframe(df_registros)
