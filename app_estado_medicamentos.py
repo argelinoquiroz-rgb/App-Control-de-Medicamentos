@@ -66,11 +66,18 @@ def obtener_consecutivo():
         return int(df_registros["Consecutivo"].max()) + 1
 
 def mostrar_pdf(soporte_path):
+    """Mostrar PDF y botón de descarga con key único"""
     if os.path.exists(soporte_path):
         st.markdown(f'<a href="file:///{soporte_path}" target="_blank">📄 Abrir PDF</a>', unsafe_allow_html=True)
         with open(soporte_path, "rb") as f:
             pdf_data = f.read()
-        st.download_button("📥 Descargar PDF", pdf_data, file_name=os.path.basename(soporte_path), mime="application/pdf")
+        st.download_button(
+            label="📥 Descargar PDF",
+            data=pdf_data,
+            file_name=os.path.basename(soporte_path),
+            mime="application/pdf",
+            key=f"download_{os.path.basename(soporte_path)}_{int(time.time())}"
+        )
 
 def descargar_csv(df):
     b64 = base64.b64encode(df.to_csv(index=False).encode()).decode()
@@ -186,7 +193,7 @@ if st.session_state["usuario"]:
                     data=open(row["Soporte"], "rb").read(),
                     file_name=os.path.basename(row["Soporte"]),
                     mime="application/pdf",
-                    key=f"download_{idx}"
+                    key=f"download_consolidado_{idx}_{int(time.time())}"
                 )
 
     # -------- TAB BUSCAR REGISTRO --------
