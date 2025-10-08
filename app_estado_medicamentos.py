@@ -9,8 +9,8 @@ import time
 # ---------------- CONFIGURACIÓN ----------------
 st.set_page_config(page_title="Control de Estado de Medicamentos", layout="wide")
 
-# Directorios
-BASE_DIR = os.getcwd()
+# Directorios (ruta fija en tu PC)
+BASE_DIR = r"C:\Users\lidercompras\OneDrive - pharmaser.com.co\Documentos\Reportes\01_Informes Power BI\01_Analisis de Solicitudes y Ordenes de Compras\Actualiza Informes Phyton\control_estado_medicamentos"
 DATA_FILE = os.path.join(BASE_DIR, "registros_medicamentos.csv")
 USERS_FILE = os.path.join(BASE_DIR, "usuarios.csv")
 SOPORTES_DIR = os.path.join(BASE_DIR, "soportes")
