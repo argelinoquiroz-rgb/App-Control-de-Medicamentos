@@ -11,19 +11,18 @@ from io import BytesIO
 # CONFIGURACIÓN INICIAL
 # ==============================
 st.set_page_config(page_title="Control de Estado de Medicamentos", layout="wide")
-
 st.title("💊 Control de Estado de Medicamentos")
 
 # ==================================
 # CARGAR CREDENCIALES DESDE st.secrets
 # ==================================
 try:
-    creds_dict = json.loads(st.secrets["google_credentials"])  # 👈 credenciales JSON desde secrets
+    creds_dict = json.loads(st.secrets["google_credentials"])  # credenciales JSON desde secrets
 except Exception as e:
     st.error("❌ No se pudo cargar 'google_credentials' desde st.secrets. Verifica que esté correctamente configurado.")
     st.stop()
 
-# Crear archivo temporal en modo texto (corrección importante)
+# Crear archivo temporal en modo texto
 with tempfile.NamedTemporaryFile(delete=False, mode="w", suffix=".json") as tmpfile:
     json.dump(creds_dict, tmpfile)
     SERVICE_FILE = tmpfile.name
@@ -33,7 +32,9 @@ with tempfile.NamedTemporaryFile(delete=False, mode="w", suffix=".json") as tmpf
 # ==================================
 try:
     gauth = GoogleAuth()
-    gauth.ServiceAuth(SERVICE_FILE)  # ✅ Autenticación para cuenta de servicio
+    # Indicamos el JSON de la cuenta de servicio
+    gauth.settings['client_config_file'] = SERVICE_FILE
+    gauth.ServiceAuth()  # ✅ Ahora sin argumentos
     drive = GoogleDrive(gauth)
     st.success("✅ Conexión exitosa con Google Drive mediante cuenta de servicio.")
 except Exception as e:
@@ -44,13 +45,10 @@ except Exception as e:
 # CONFIGURACIÓN DE CARPETA EN DRIVE
 # ==================================
 st.subheader("📁 Configuración de carpeta")
-
-# Puedes usar el ID directo de la carpeta de Drive
 carpeta_id = st.text_input("🔑 Ingresa el ID de la carpeta en Google Drive:", "")
 
 if carpeta_id:
     st.info(f"📂 Buscando archivos dentro de la carpeta con ID: `{carpeta_id}`")
-
     try:
         query = f"'{carpeta_id}' in parents and trashed=false"
         file_list = drive.ListFile({'q': query}).GetList()
@@ -59,7 +57,6 @@ if carpeta_id:
             st.warning("⚠️ No se encontraron archivos en esta carpeta.")
         else:
             st.subheader("📄 Archivos encontrados:")
-
             for file in file_list:
                 file_title = file['title']
                 file_id = file['id']
@@ -92,12 +89,10 @@ if carpeta_id:
 # SUBIR NUEVO ARCHIVO A LA CARPETA
 # ==================================
 st.subheader("📤 Subir un nuevo archivo")
-
 uploaded_file = st.file_uploader("Selecciona un archivo para subir a Google Drive:", type=None)
 
 if uploaded_file and carpeta_id:
     try:
-        # Crear archivo en Drive
         gfile = drive.CreateFile({'title': uploaded_file.name, 'parents': [{'id': carpeta_id}]})
         gfile.SetContentBytes(uploaded_file.getvalue())
         gfile.Upload()
@@ -107,3 +102,4 @@ if uploaded_file and carpeta_id:
         st.error(f"❌ Error al subir el archivo: {e}")
 elif uploaded_file and not carpeta_id:
     st.warning("⚠️ Debes ingresar primero un ID de carpeta antes de subir un archivo.")
+
