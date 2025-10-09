@@ -8,6 +8,7 @@ from pydrive2.drive import GoogleDrive
 import io
 import base64
 import os
+import json
 
 # ---------------- CONFIGURACIÓN ----------------
 st.set_page_config(page_title="Control de Estado de Medicamentos", layout="wide")
@@ -16,15 +17,15 @@ st.set_page_config(page_title="Control de Estado de Medicamentos", layout="wide"
 SERVICE_JSON = "psychic-fin-456901-t8-aaef9c7badb0.JSON"  # Tu JSON
 FOLDER_ID = "1AzQrHdxkkdWYnKbu0zLeIeM8jgXbMCZF"  # Carpeta de Drive
 
-gauth = GoogleAuth()
-gauth.ServiceAuthSettings = {
-    "client_config_file": SERVICE_JSON,
-    "save_credentials": True,
-    "save_credentials_backend": "file",
-    "save_credentials_file": "credentials.json"
-}
-gauth.ServiceAuth()
-drive = GoogleDrive(gauth)
+# Verificar si el archivo existe
+if not os.path.exists(SERVICE_JSON):
+    st.error(f"No se encontró el archivo de credenciales: {SERVICE_JSON}")
+else:
+    gauth = GoogleAuth()
+    # Autenticación con cuenta de servicio
+    gauth.LoadServiceConfigSettings()
+    gauth.ServiceAuth()  
+    drive = GoogleDrive(gauth)
 
 # ---------------- FUNCIONES DRIVE ----------------
 def upload_pdf_to_drive(file_buffer, file_name):
@@ -208,3 +209,4 @@ if st.session_state["usuario"]:
     # -------- TAB CONSOLIDADO --------
     with tabs[1]:
         st.dataframe(df_registros)
+
