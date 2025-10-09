@@ -5,15 +5,11 @@ import re
 import base64
 import time
 from datetime import datetime
-import json
-import tempfile
-from pydrive2.auth import GoogleAuth
-from pydrive2.drive import GoogleDrive
 
 # ---------------- CONFIGURACIÓN ----------------
 st.set_page_config(page_title="Control de Estado de Medicamentos", layout="wide")
 
-# Directorios locales
+# Directorios
 BASE_DIR = os.getcwd()
 DATA_FILE = os.path.join(BASE_DIR, "registros_medicamentos.csv")
 USERS_FILE = os.path.join(BASE_DIR, "usuarios.csv")
@@ -23,17 +19,18 @@ ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 os.makedirs(SOPORTES_DIR, exist_ok=True)
 os.makedirs(ASSETS_DIR, exist_ok=True)
 
-# Logo opcional
+# Logo (opcional)
 logo_path = os.path.join(ASSETS_DIR, "logo_empresa.png")
 if os.path.exists(logo_path):
     st.image(logo_path, width=180)
+
 st.markdown("## 🧾 Control de Estado de Medicamentos")
 
-# ---------------- CARGAR ARCHIVOS ----------------
+# ---------------- CREAR ARCHIVOS SI NO EXISTEN ----------------
 expected_columns = ["Consecutivo","Usuario", "Estado", "PLU", "Código Genérico",
                     "Nombre Medicamento", "Laboratorio", "Fecha", "Soporte"]
 
-# Registros
+# Cargar registros
 if os.path.exists(DATA_FILE):
     df_registros = pd.read_csv(DATA_FILE)
     for col in expected_columns:
@@ -44,7 +41,7 @@ else:
     df_registros = pd.DataFrame(columns=expected_columns)
     df_registros.to_csv(DATA_FILE, index=False)
 
-# Usuarios
+# Cargar usuarios
 if os.path.exists(USERS_FILE):
     df_usuarios = pd.read_csv(USERS_FILE)
 else:
@@ -102,7 +99,7 @@ if "usuario" in st.session_state:
     st.sidebar.success(f"Sesión iniciada: {st.session_state['usuario']}")
     if st.sidebar.button("Cerrar sesión"):
         st.session_state.clear()
-        st.experimental_rerun()
+        st.success("Sesión cerrada. Recarga la página para iniciar de nuevo.")
 else:
     usuario_input = st.sidebar.text_input("Usuario (nombre.apellido)").strip().lower()
     contrasena_input = st.sidebar.text_input("Contraseña", type="password")
@@ -111,7 +108,7 @@ else:
             stored_pass = df_usuarios.loc[df_usuarios["usuario"] == usuario_input, "contrasena"].values[0]
             if contrasena_input == stored_pass:
                 st.session_state["usuario"] = usuario_input
-                st.experimental_rerun()  # 🔹 Evita doble click
+                st.success(f"Bienvenido {usuario_input}")
             else:
                 st.sidebar.error("Contraseña incorrecta")
         else:
@@ -174,44 +171,14 @@ if "usuario" in st.session_state:
             elif "ultimo_pdf_path" not in st.session_state:
                 st.warning("Debes subir un PDF")
             else:
-                # Guardar registro local
                 new_row = pd.DataFrame([[consecutivo, usuario, estado, plu, codigo_gen,
                                          nombre, laboratorio, datetime.now().strftime("%Y-%m-%d"),
                                          st.session_state["ultimo_pdf_path"]]],
                                        columns=df_registros.columns)
                 df_registros = pd.concat([df_registros, new_row], ignore_index=True)
                 save_registros(df_registros)
-
-                # 🔹 Subida a Google Drive
-                try:
-                    creds_dict = json.loads(st.secrets["google_credentials"])
-                    with tempfile.NamedTemporaryFile(delete=False, mode="w", suffix=".json") as tmpfile:
-                        json.dump(creds_dict, tmpfile)
-                        SERVICE_FILE = tmpfile.name
-
-                    gauth = GoogleAuth()
-                    gauth.settings['client_config_file'] = SERVICE_FILE
-                    gauth.ServiceAuth()  # ✅ Correcto
-                    drive = GoogleDrive(gauth)
-
-                    carpeta_drive_id = st.secrets.get("carpeta_drive_id", "")
-                    if carpeta_drive_id:
-                        gfile = drive.CreateFile({'title': os.path.basename(pdf_path),
-                                                  'parents':[{'id': carpeta_drive_id}]})
-                        gfile.SetContentFile(pdf_path)
-                        gfile.Upload()
-                        st.success(f"✅ Archivo subido a Drive: {gfile['title']}")
-                    else:
-                        st.warning("⚠️ No se ha configurado ID de carpeta de Drive en secrets.")
-                except Exception as e:
-                    st.error(f"❌ Error autenticando o subiendo a Google Drive: {e}")
-
                 mostrar_pdf_en_pestana(st.session_state["ultimo_pdf_path"])
                 limpiar_formulario()
-
-        if col2.button("🧹 Limpiar formulario"):
-            limpiar_formulario()
-            st.success("Formulario limpiado ✅")
 
     # -------- TAB CONSOLIDADO --------
     with tabs[1]:
@@ -224,3 +191,12 @@ if "usuario" in st.session_state:
         descargar_csv(df_registros)
         for idx, row in df_registros.iterrows():
             if os.path.exists(row["Soporte"]):
+                with open(row["Soporte"], "rb") as f:
+                    st.download_button(
+                        label=f"📥 Descargar {os.path.basename(row['Soporte'])}",
+                        data=f.read(),
+                        file_name=os.path.basename(row["Soporte"]),
+                        mime="application/pdf",
+                        key=f"download_{idx}"
+                    )
+
