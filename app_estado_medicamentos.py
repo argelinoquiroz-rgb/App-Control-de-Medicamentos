@@ -23,7 +23,7 @@ ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 os.makedirs(SOPORTES_DIR, exist_ok=True)
 os.makedirs(ASSETS_DIR, exist_ok=True)
 
-# Logo opcional
+# Logo (opcional)
 logo_path = os.path.join(ASSETS_DIR, "logo_empresa.png")
 if os.path.exists(logo_path):
     st.image(logo_path, width=180)
@@ -111,13 +111,12 @@ else:
             stored_pass = df_usuarios.loc[df_usuarios["usuario"] == usuario_input, "contrasena"].values[0]
             if contrasena_input == stored_pass:
                 st.session_state["usuario"] = usuario_input
-                st.sidebar.success(f"Bienvenido {usuario_input}")
+                st.experimental_rerun()
             else:
                 st.sidebar.error("Contraseña incorrecta")
         else:
             st.sidebar.error("Usuario no registrado")
 
-    # Crear nuevo usuario
     st.sidebar.markdown("---")
     st.sidebar.markdown("### Crear nuevo usuario")
     nombre_usuario_nuevo = st.sidebar.text_input("Usuario (nombre.apellido)", key="usuario_nuevo").strip().lower()
@@ -183,16 +182,15 @@ if "usuario" in st.session_state:
                 df_registros = pd.concat([df_registros, new_row], ignore_index=True)
                 save_registros(df_registros)
 
-                # Subir a Google Drive
+                # Subir PDF a Google Drive
                 try:
-                    creds_dict = st.secrets["google_credentials"]
+                    creds_dict = json.loads(st.secrets["google_credentials"])
                     with tempfile.NamedTemporaryFile(delete=False, mode="w", suffix=".json") as tmpfile:
                         json.dump(creds_dict, tmpfile)
                         SERVICE_FILE = tmpfile.name
 
                     gauth = GoogleAuth()
-                    gauth.settings['client_config_file'] = SERVICE_FILE
-                    gauth.ServiceAuth()
+                    gauth.ServiceAuth(SERVICE_FILE)
                     drive = GoogleDrive(gauth)
 
                     carpeta_drive_id = st.secrets.get("carpeta_drive_id", "")
@@ -216,4 +214,23 @@ if "usuario" in st.session_state:
 
     # -------- TAB CONSOLIDADO --------
     with tabs[1]:
+        st.dataframe(
+            df_registros.style.set_table_styles(
+                [{'selector': 'th', 'props': [('text-align', 'center')]},
+                 {'selector': 'td', 'props': [('text-align', 'center')]}]
+            )
+        )
+        descargar_csv(df_registros)
+
+        for idx, row in df_registros.iterrows():
+            if os.path.exists(row["Soporte"]):
+                with open(row["Soporte"], "rb") as f:
+                    st.download_button(
+                        label=f"📥 Descargar {os.path.basename(row['Soporte'])}",
+                        data=f,
+                        file_name=os.path.basename(row['Soporte']),
+                        mime="application/pdf",
+                        key=f"download_{idx}"
+                    )
+
        
