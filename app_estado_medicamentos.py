@@ -18,14 +18,13 @@ st.title("💊 Control de Estado de Medicamentos")
 # CARGAR CREDENCIALES DESDE st.secrets
 # ==================================
 try:
-    # ✅ Convertimos la sección de secrets en un dict
-    creds_dict = dict(st.secrets["google_credentials"])
+    creds_dict = json.loads(st.secrets["google_credentials"])  # 👈 credenciales JSON desde secrets
 except Exception as e:
     st.error("❌ No se pudo cargar 'google_credentials' desde st.secrets. Verifica que esté correctamente configurado.")
     st.stop()
 
-# Crear archivo temporal con las credenciales
-with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmpfile:
+# Crear archivo temporal en modo texto (corrección importante)
+with tempfile.NamedTemporaryFile(delete=False, mode="w", suffix=".json") as tmpfile:
     json.dump(creds_dict, tmpfile)
     SERVICE_FILE = tmpfile.name
 
@@ -34,8 +33,7 @@ with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmpfile:
 # ==================================
 try:
     gauth = GoogleAuth()
-    gauth.LoadServiceConfigFile(SERVICE_FILE)  # ✅ Cargar archivo JSON temporal
-    gauth.ServiceAuth()                        # ✅ Autenticación sin parámetro
+    gauth.ServiceAuth(SERVICE_FILE)  # ✅ Autenticación para cuenta de servicio
     drive = GoogleDrive(gauth)
     st.success("✅ Conexión exitosa con Google Drive mediante cuenta de servicio.")
 except Exception as e:
@@ -47,7 +45,7 @@ except Exception as e:
 # ==================================
 st.subheader("📁 Configuración de carpeta")
 
-# Ejemplo: https://drive.google.com/drive/folders/1AbCdEFGHiJKLmnOPqrS
+# Puedes usar el ID directo de la carpeta de Drive
 carpeta_id = st.text_input("🔑 Ingresa el ID de la carpeta en Google Drive:", "")
 
 if carpeta_id:
@@ -109,4 +107,3 @@ if uploaded_file and carpeta_id:
         st.error(f"❌ Error al subir el archivo: {e}")
 elif uploaded_file and not carpeta_id:
     st.warning("⚠️ Debes ingresar primero un ID de carpeta antes de subir un archivo.")
-
