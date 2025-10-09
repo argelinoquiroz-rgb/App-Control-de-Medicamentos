@@ -5,8 +5,10 @@ import re
 import base64
 import time
 from datetime import datetime
-import tempfile
 import json
+import tempfile
+from pydrive2.auth import GoogleAuth
+from pydrive2.drive import GoogleDrive
 
 # ---------------- CONFIGURACIÓN ----------------
 st.set_page_config(page_title="Control de Estado de Medicamentos", layout="wide")
@@ -21,7 +23,7 @@ ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 os.makedirs(SOPORTES_DIR, exist_ok=True)
 os.makedirs(ASSETS_DIR, exist_ok=True)
 
-# Logo (opcional)
+# Logo opcional
 logo_path = os.path.join(ASSETS_DIR, "logo_empresa.png")
 if os.path.exists(logo_path):
     st.image(logo_path, width=180)
@@ -94,51 +96,13 @@ def descargar_csv(df):
     b64 = base64.b64encode(df.to_csv(index=False).encode()).decode()
     st.markdown(f'<a href="data:file/csv;base64,{b64}" download="consolidado_medicamentos.csv">📥 Descargar CSV consolidado</a>', unsafe_allow_html=True)
 
-# ---------------- GOOGLE DRIVE ----------------
-def subir_a_drive(archivo_local_path):
-    try:
-        from pydrive2.auth import GoogleAuth
-        from pydrive2.drive import GoogleDrive
-
-        if not os.path.exists(archivo_local_path):
-            st.error(f"❌ Archivo no encontrado: {archivo_local_path}")
-            return
-
-        # Guardar JSON temporal
-        creds_dict = st.secrets["google_credentials"]
-        with tempfile.NamedTemporaryFile(delete=False, mode="w", suffix=".json") as tmpfile:
-            json.dump(creds_dict, tmpfile)
-            SERVICE_FILE = tmpfile.name
-
-        # Configurar PyDrive2
-        gauth = GoogleAuth()
-        gauth.settings['client_config_file'] = SERVICE_FILE
-        gauth.ServiceAuth()  # ✅ sin argumentos
-        drive = GoogleDrive(gauth)
-
-        carpeta_drive_id = st.secrets.get("carpeta_drive_id", "")
-        if not carpeta_drive_id:
-            st.warning("⚠️ No se ha configurado el ID de la carpeta de Drive en st.secrets")
-            return
-
-        gfile = drive.CreateFile({
-            'title': os.path.basename(archivo_local_path),
-            'parents': [{'id': carpeta_drive_id}]
-        })
-        gfile.SetContentFile(archivo_local_path)
-        gfile.Upload()
-        st.success(f"✅ Archivo subido a Drive: {gfile['title']}")
-
-    except Exception as e:
-        st.error(f"❌ Error autenticando o subiendo a Google Drive: {e}")
-
 # ---------------- SESIÓN ----------------
 st.sidebar.header("🔐 Inicio de sesión")
 if "usuario" in st.session_state:
     st.sidebar.success(f"Sesión iniciada: {st.session_state['usuario']}")
     if st.sidebar.button("Cerrar sesión"):
         st.session_state.clear()
-        st.experimental_rerun()
+        st.success("Sesión cerrada. Recarga la página para iniciar de nuevo.")
 else:
     usuario_input = st.sidebar.text_input("Usuario (nombre.apellido)").strip().lower()
     contrasena_input = st.sidebar.text_input("Contraseña", type="password")
@@ -147,12 +111,13 @@ else:
             stored_pass = df_usuarios.loc[df_usuarios["usuario"] == usuario_input, "contrasena"].values[0]
             if contrasena_input == stored_pass:
                 st.session_state["usuario"] = usuario_input
-                st.experimental_rerun()  # ✅ reinicia la app correctamente
+                st.sidebar.success(f"Bienvenido {usuario_input}")
             else:
                 st.sidebar.error("Contraseña incorrecta")
         else:
             st.sidebar.error("Usuario no registrado")
 
+    # Crear nuevo usuario
     st.sidebar.markdown("---")
     st.sidebar.markdown("### Crear nuevo usuario")
     nombre_usuario_nuevo = st.sidebar.text_input("Usuario (nombre.apellido)", key="usuario_nuevo").strip().lower()
@@ -218,8 +183,29 @@ if "usuario" in st.session_state:
                 df_registros = pd.concat([df_registros, new_row], ignore_index=True)
                 save_registros(df_registros)
 
-                # Subir a Drive
-                subir_a_drive(st.session_state["ultimo_pdf_path"])
+                # Subir a Google Drive
+                try:
+                    creds_dict = st.secrets["google_credentials"]
+                    with tempfile.NamedTemporaryFile(delete=False, mode="w", suffix=".json") as tmpfile:
+                        json.dump(creds_dict, tmpfile)
+                        SERVICE_FILE = tmpfile.name
+
+                    gauth = GoogleAuth()
+                    gauth.settings['client_config_file'] = SERVICE_FILE
+                    gauth.ServiceAuth()
+                    drive = GoogleDrive(gauth)
+
+                    carpeta_drive_id = st.secrets.get("carpeta_drive_id", "")
+                    if carpeta_drive_id:
+                        gfile = drive.CreateFile({'title': os.path.basename(st.session_state["ultimo_pdf_path"]),
+                                                  'parents':[{'id': carpeta_drive_id}]})
+                        gfile.SetContentFile(st.session_state["ultimo_pdf_path"])
+                        gfile.Upload()
+                        st.success(f"✅ Archivo subido a Drive: {gfile['title']}")
+                    else:
+                        st.warning("⚠️ No se ha configurado ID de carpeta de Drive en secrets.")
+                except Exception as e:
+                    st.error(f"❌ Error autenticando o subiendo a Google Drive: {e}")
 
                 mostrar_pdf_en_pestana(st.session_state["ultimo_pdf_path"])
                 limpiar_formulario()
@@ -230,20 +216,4 @@ if "usuario" in st.session_state:
 
     # -------- TAB CONSOLIDADO --------
     with tabs[1]:
-        st.dataframe(
-            df_registros.style.set_table_styles(
-                [{'selector': 'th', 'props': [('text-align', 'center')]},
-                 {'selector': 'td', 'props': [('text-align', 'center')]}]
-            )
-        )
-        descargar_csv(df_registros)
-        # Botones de descarga de PDFs
-        for idx, row in df_registros.iterrows():
-            if os.path.exists(row["Soporte"]):
-                st.download_button(
-                    label=f"📥 Descargar {os.path.basename(row['Soporte'])}",
-                    data=open(row["Soporte"], "rb").read(),
-                    file_name=os.path.basename(row["Soporte"]),
-                    mime="application/pdf",
-                    key=f"download_{idx}"
-                )
+       
