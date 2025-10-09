@@ -33,7 +33,6 @@ st.markdown("## 🧾 Control de Estado de Medicamentos")
 expected_columns = ["Consecutivo","Usuario", "Estado", "PLU", "Código Genérico",
                     "Nombre Medicamento", "Laboratorio", "Fecha", "Soporte"]
 
-# Cargar registros
 if os.path.exists(DATA_FILE):
     df_registros = pd.read_csv(DATA_FILE)
     for col in expected_columns:
@@ -44,7 +43,6 @@ else:
     df_registros = pd.DataFrame(columns=expected_columns)
     df_registros.to_csv(DATA_FILE, index=False)
 
-# Cargar usuarios
 if os.path.exists(USERS_FILE):
     df_usuarios = pd.read_csv(USERS_FILE)
 else:
@@ -98,11 +96,8 @@ def descargar_csv(df):
 
 def subir_a_drive(local_path):
     try:
-        # Cargar credenciales desde secrets
         creds_dict = json.loads(st.secrets["google"]["service_account_file"])
         carpeta_drive_id = st.secrets["google"]["carpeta_drive_id"]
-        
-        # Crear archivo temporal con credenciales
         with tempfile.NamedTemporaryFile(delete=False, mode="w", suffix=".json") as tmpfile:
             json.dump(creds_dict, tmpfile)
             SERVICE_FILE = tmpfile.name
@@ -111,7 +106,6 @@ def subir_a_drive(local_path):
         gauth.ServiceAuth(service_file=SERVICE_FILE)
         drive = GoogleDrive(gauth)
 
-        # Subir archivo
         gfile = drive.CreateFile({'title': os.path.basename(local_path),
                                   'parents':[{'id': carpeta_drive_id}]})
         gfile.SetContentFile(local_path)
@@ -175,8 +169,7 @@ if "usuario" in st.session_state:
         consecutivo = obtener_consecutivo()
         estado = st.selectbox("Estado", ["Agotado", "Desabastecido", "Descontinuado"], index=0, key="estado")
         plu = st.text_input("PLU", key="plu").upper()
-        codigo_gen_default = plu.split("_")[0] if "_" in plu else ""
-        codigo_gen = st.text_input("Código genérico", value=codigo_gen_default, key="codigo_generico").upper()
+        codigo_gen = st.text_input("Código genérico", key="codigo_generico").upper()
         nombre = st.text_input("Nombre del medicamento", key="nombre_medicamento").upper()
         laboratorio = st.text_input("Laboratorio", key="laboratorio").upper()
         soporte_file = st.file_uploader("📎 Subir soporte PDF", type=["pdf"], key="soporte_file")
@@ -190,12 +183,28 @@ if "usuario" in st.session_state:
             st.session_state["ultimo_pdf_path"] = pdf_path
             mostrar_pdf_en_pestana(pdf_path)
 
-        col1, col2 = st.columns([1,1])
-        if col1.button("💾 Guardar registro"):
+        if st.button("💾 Guardar registro"):
             if not nombre.strip():
                 st.warning("Debes ingresar el nombre del medicamento")
             elif "ultimo_pdf_path" not in st.session_state:
                 st.warning("Debes subir un PDF")
             else:
                 new_row = pd.DataFrame([[
-                    consecutivo, usuario
+                    consecutivo, usuario, estado, plu, codigo_gen,
+                    nombre, laboratorio, datetime.now().strftime("%Y-%m-%d"),
+                    st.session_state["ultimo_pdf_path"]
+                ]], columns=df_registros.columns)
+                df_registros = pd.concat([df_registros, new_row], ignore_index=True)
+                save_registros(df_registros)
+
+                # Subir a Drive
+                subir_a_drive(st.session_state["ultimo_pdf_path"])
+
+                mostrar_pdf_en_pestana(st.session_state["ultimo_pdf_path"])
+                limpiar_formulario()
+
+    # -------- TAB CONSOLIDADO --------
+    with tabs[1]:
+        st.dataframe(df_registros)
+        descargar_csv(df_registros)
+
