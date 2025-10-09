@@ -14,31 +14,43 @@ import os
 st.set_page_config(page_title="Control de Estado de Medicamentos", layout="wide")
 
 # ---------------- AUTENTICACIÓN DRIVE ----------------
-# Cargar credenciales desde Streamlit Secrets
+# Validar credenciales en st.secrets
 if "google_credentials" not in st.secrets:
     st.error("❌ No se encontraron credenciales en st.secrets. Configura 'google_credentials' en la pestaña Secrets.")
     st.stop()
 
-# Convertir el JSON de credenciales a un diccionario
-creds_dict = json.loads(st.secrets["google_credentials"])
+# Usar directamente las credenciales del secreto
+creds_dict = dict(st.secrets["google_credentials"])
 
-# Autenticación directa con PyDrive2
+# Guardarlas temporalmente para PyDrive2
+SERVICE_FILE = "service_account.json"
+with open(SERVICE_FILE, "w") as f:
+    json.dump(creds_dict, f)
+
+# Autenticación PyDrive2
 gauth = GoogleAuth()
-gauth.ServiceAuth(creds_dict)
+gauth.LoadCredentialsFile(SERVICE_FILE)
+gauth.ServiceAuth()
 drive = GoogleDrive(gauth)
 
-# ID de la carpeta y nombre del CSV en Google Drive
+# ---------------- VARIABLES GLOBALES ----------------
 FOLDER_ID = "1AzQrHdxkkdWYnKbu0zLeIeM8jgXbMCZF"
 CSV_NAME = "registros_medicamentos.csv"
 
 # ---------------- FUNCIONES DRIVE ----------------
 def upload_pdf_to_drive(file_buffer, file_name):
+    """Sube un PDF a la carpeta de Google Drive"""
+    temp_path = f"/tmp/{file_name}"
+    with open(temp_path, "wb") as f:
+        f.write(file_buffer.getvalue())
+
     file_drive = drive.CreateFile({'title': file_name, 'parents': [{'id': FOLDER_ID}]})
-    file_drive.SetContentFile(file_buffer.name)
+    file_drive.SetContentFile(temp_path)
     file_drive.Upload()
     return file_drive['id']
 
 def upload_csv_to_drive(df, file_name):
+    """Sube un DataFrame CSV a Drive"""
     csv_data = df.to_csv(index=False)
     file_drive = drive.CreateFile({'title': file_name, 'parents': [{'id': FOLDER_ID}]})
     file_drive.SetContentString(csv_data)
@@ -46,6 +58,7 @@ def upload_csv_to_drive(df, file_name):
     return file_drive['id']
 
 def get_file_id_by_name(file_name):
+    """Obtiene el ID de un archivo existente en Drive"""
     query = f"'{FOLDER_ID}' in parents and title='{file_name}' and trashed=false"
     files = drive.ListFile({'q': query}).GetList()
     if len(files) > 0:
@@ -53,10 +66,11 @@ def get_file_id_by_name(file_name):
     return None
 
 def download_file_from_drive(file_id):
+    """Descarga un archivo CSV desde Drive"""
     file_drive = drive.CreateFile({'id': file_id})
     return file_drive.GetContentString()
 
-# ---------------- CARGAR CSV ----------------
+# ---------------- CARGAR O CREAR CSV ----------------
 file_id = get_file_id_by_name(CSV_NAME)
 if file_id:
     csv_content = download_file_from_drive(file_id)
@@ -70,6 +84,7 @@ else:
 
 # ---------------- FUNCIONES AUXILIARES ----------------
 def save_registros_drive(df):
+    """Guarda los registros actualizados en Drive"""
     existing_id = get_file_id_by_name(CSV_NAME)
     if existing_id:
         file_drive = drive.CreateFile({'id': existing_id})
@@ -79,11 +94,13 @@ def save_registros_drive(df):
         upload_csv_to_drive(df, CSV_NAME)
 
 def limpiar_formulario():
+    """Limpia el formulario del registro"""
     for key in ["estado","plu","codigo_generico","nombre_medicamento","laboratorio","soporte_file","ultimo_pdf_id","ultimo_pdf_name"]:
         if key in st.session_state:
             del st.session_state[key]
 
 def obtener_consecutivo():
+    """Obtiene el consecutivo incremental"""
     if df_registros.empty:
         return 1
     else:
@@ -97,9 +114,12 @@ USERS_FILE_LOCAL = "usuarios.csv"
 if os.path.exists(USERS_FILE_LOCAL):
     df_usuarios = pd.read_csv(USERS_FILE_LOCAL)
 else:
-    df_usuarios = pd.DataFrame([{"usuario": "admin", "contrasena": "1234", "correo": "admin@pharmaser.com.co"}])
+    df_usuarios = pd.DataFrame([
+        {"usuario": "admin", "contrasena": "1234", "correo": "admin@pharmaser.com.co"}
+    ])
     df_usuarios.to_csv(USERS_FILE_LOCAL, index=False)
 
+# Campos de login
 usuario_input = st.sidebar.text_input("Usuario (nombre.apellido)").strip().lower()
 contrasena_input = st.sidebar.text_input("Contraseña", type="password")
 
@@ -113,13 +133,15 @@ if st.sidebar.button("Ingresar"):
     else:
         st.sidebar.error("Usuario no registrado")
 
-# ---------------- INTERFAZ ----------------
+# ---------------- INTERFAZ PRINCIPAL ----------------
 if st.session_state["usuario"]:
     usuario = st.session_state["usuario"]
     st.sidebar.success(f"Sesión iniciada: {usuario}")
-    st.markdown(f"### Hola, **{usuario}**")
+    st.markdown(f"### Hola, **{usuario}** 👋")
 
     tabs = st.tabs(["Registrar medicamento", "Consolidado general"])
+
+    # -------- TAB 1: REGISTRAR --------
     with tabs[0]:
         consecutivo = obtener_consecutivo()
         estado = st.selectbox("Estado", ["Agotado", "Desabastecido", "Descontinuado"], index=0)
@@ -134,26 +156,26 @@ if st.session_state["usuario"]:
             pdf_id = upload_pdf_to_drive(soporte_file, nombre_pdf)
             st.session_state["ultimo_pdf_id"] = pdf_id
             st.session_state["ultimo_pdf_name"] = nombre_pdf
-            st.success("PDF subido a Drive ✅")
+            st.success("✅ PDF subido a Drive correctamente")
 
         if st.button("💾 Guardar registro"):
             if not nombre.strip():
                 st.warning("Debes ingresar el nombre del medicamento")
             elif "ultimo_pdf_id" not in st.session_state:
-                st.warning("Debes subir un PDF")
+                st.warning("Debes subir un archivo PDF")
             else:
                 new_row = pd.DataFrame([[
                     consecutivo, usuario, estado, plu, codigo_gen,
                     nombre, laboratorio, datetime.now().strftime("%Y-%m-%d"),
                     st.session_state["ultimo_pdf_id"], st.session_state["ultimo_pdf_name"]
                 ]], columns=df_registros.columns)
+
                 df_registros = pd.concat([df_registros, new_row], ignore_index=True)
                 save_registros_drive(df_registros)
-                st.success("✅ Registro guardado en Drive")
+                st.success("✅ Registro guardado exitosamente en Drive")
                 limpiar_formulario()
 
+    # -------- TAB 2: CONSOLIDADO --------
     with tabs[1]:
+        st.markdown("### 📋 Consolidado General de Medicamentos")
         st.dataframe(df_registros)
-
-
-
