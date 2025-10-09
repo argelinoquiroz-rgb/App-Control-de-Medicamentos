@@ -1,181 +1,111 @@
 import streamlit as st
 import pandas as pd
-import re
-import hashlib
-from datetime import datetime
+import json
+import tempfile
+import os
 from pydrive2.auth import GoogleAuth
 from pydrive2.drive import GoogleDrive
-import io
-import base64
-import json
-import os
+from io import BytesIO
 
-# ---------------- CONFIGURACIÓN ----------------
+# ==============================
+# CONFIGURACIÓN INICIAL
+# ==============================
 st.set_page_config(page_title="Control de Estado de Medicamentos", layout="wide")
 
-# ---------------- AUTENTICACIÓN DRIVE ----------------
-# Validar credenciales en st.secrets
-if "google_credentials" not in st.secrets:
-    st.error("❌ No se encontraron credenciales en st.secrets. Configura 'google_credentials' en la pestaña Secrets.")
+st.title("💊 Control de Estado de Medicamentos")
+
+# ==================================
+# CARGAR CREDENCIALES DESDE st.secrets
+# ==================================
+try:
+    creds_dict = json.loads(st.secrets["google_credentials"])  # 👈 credenciales JSON desde secrets
+except Exception as e:
+    st.error("❌ No se pudo cargar 'google_credentials' desde st.secrets. Verifica que esté correctamente configurado.")
     st.stop()
 
-# Usar directamente las credenciales del secreto
-creds_dict = dict(st.secrets["google_credentials"])
+# Crear archivo temporal con las credenciales
+with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmpfile:
+    json.dump(creds_dict, tmpfile)
+    SERVICE_FILE = tmpfile.name
 
-# Guardarlas temporalmente para PyDrive2
-SERVICE_FILE = "service_account.json"
-with open(SERVICE_FILE, "w") as f:
-    json.dump(creds_dict, f)
+# ==================================
+# AUTENTICACIÓN CON CUENTA DE SERVICIO
+# ==================================
+try:
+    gauth = GoogleAuth()
+    gauth.ServiceAuth(SERVICE_FILE)  # ✅ Autenticación para cuenta de servicio
+    drive = GoogleDrive(gauth)
+    st.success("✅ Conexión exitosa con Google Drive mediante cuenta de servicio.")
+except Exception as e:
+    st.error(f"❌ Error autenticando con la cuenta de servicio: {e}")
+    st.stop()
 
-# Autenticación PyDrive2
-gauth = GoogleAuth()
-gauth.LoadCredentialsFile(SERVICE_FILE)
-gauth.ServiceAuth()
-drive = GoogleDrive(gauth)
+# ==================================
+# CONFIGURACIÓN DE CARPETA EN DRIVE
+# ==================================
+st.subheader("📁 Configuración de carpeta")
 
-# ---------------- VARIABLES GLOBALES ----------------
-FOLDER_ID = "1AzQrHdxkkdWYnKbu0zLeIeM8jgXbMCZF"
-CSV_NAME = "registros_medicamentos.csv"
+# Puedes usar el ID directo de la carpeta de Drive
+# Ejemplo: https://drive.google.com/drive/folders/1AbCdEFGHiJKLmnOPqrS
+# ID sería: 1AbCdEFGHiJKLmnOPqrS
+carpeta_id = st.text_input("🔑 Ingresa el ID de la carpeta en Google Drive:", "")
 
-# ---------------- FUNCIONES DRIVE ----------------
-def upload_pdf_to_drive(file_buffer, file_name):
-    """Sube un PDF a la carpeta de Google Drive"""
-    temp_path = f"/tmp/{file_name}"
-    with open(temp_path, "wb") as f:
-        f.write(file_buffer.getvalue())
+if carpeta_id:
+    st.info(f"📂 Buscando archivos dentro de la carpeta con ID: `{carpeta_id}`")
 
-    file_drive = drive.CreateFile({'title': file_name, 'parents': [{'id': FOLDER_ID}]})
-    file_drive.SetContentFile(temp_path)
-    file_drive.Upload()
-    return file_drive['id']
+    try:
+        query = f"'{carpeta_id}' in parents and trashed=false"
+        file_list = drive.ListFile({'q': query}).GetList()
 
-def upload_csv_to_drive(df, file_name):
-    """Sube un DataFrame CSV a Drive"""
-    csv_data = df.to_csv(index=False)
-    file_drive = drive.CreateFile({'title': file_name, 'parents': [{'id': FOLDER_ID}]})
-    file_drive.SetContentString(csv_data)
-    file_drive.Upload()
-    return file_drive['id']
-
-def get_file_id_by_name(file_name):
-    """Obtiene el ID de un archivo existente en Drive"""
-    query = f"'{FOLDER_ID}' in parents and title='{file_name}' and trashed=false"
-    files = drive.ListFile({'q': query}).GetList()
-    if len(files) > 0:
-        return files[0]['id']
-    return None
-
-def download_file_from_drive(file_id):
-    """Descarga un archivo CSV desde Drive"""
-    file_drive = drive.CreateFile({'id': file_id})
-    return file_drive.GetContentString()
-
-# ---------------- CARGAR O CREAR CSV ----------------
-file_id = get_file_id_by_name(CSV_NAME)
-if file_id:
-    csv_content = download_file_from_drive(file_id)
-    df_registros = pd.read_csv(io.StringIO(csv_content))
-else:
-    df_registros = pd.DataFrame(columns=[
-        "Consecutivo","Usuario","Estado","PLU","Código Genérico",
-        "Nombre Medicamento","Laboratorio","Fecha","SoporteID","SoporteNombre"
-    ])
-    upload_csv_to_drive(df_registros, CSV_NAME)
-
-# ---------------- FUNCIONES AUXILIARES ----------------
-def save_registros_drive(df):
-    """Guarda los registros actualizados en Drive"""
-    existing_id = get_file_id_by_name(CSV_NAME)
-    if existing_id:
-        file_drive = drive.CreateFile({'id': existing_id})
-        file_drive.SetContentString(df.to_csv(index=False))
-        file_drive.Upload()
-    else:
-        upload_csv_to_drive(df, CSV_NAME)
-
-def limpiar_formulario():
-    """Limpia el formulario del registro"""
-    for key in ["estado","plu","codigo_generico","nombre_medicamento","laboratorio","soporte_file","ultimo_pdf_id","ultimo_pdf_name"]:
-        if key in st.session_state:
-            del st.session_state[key]
-
-def obtener_consecutivo():
-    """Obtiene el consecutivo incremental"""
-    if df_registros.empty:
-        return 1
-    else:
-        return int(df_registros["Consecutivo"].max()) + 1
-
-# ---------------- LOGIN ----------------
-if "usuario" not in st.session_state:
-    st.session_state["usuario"] = None
-
-USERS_FILE_LOCAL = "usuarios.csv"
-if os.path.exists(USERS_FILE_LOCAL):
-    df_usuarios = pd.read_csv(USERS_FILE_LOCAL)
-else:
-    df_usuarios = pd.DataFrame([
-        {"usuario": "admin", "contrasena": "1234", "correo": "admin@pharmaser.com.co"}
-    ])
-    df_usuarios.to_csv(USERS_FILE_LOCAL, index=False)
-
-# Campos de login
-usuario_input = st.sidebar.text_input("Usuario (nombre.apellido)").strip().lower()
-contrasena_input = st.sidebar.text_input("Contraseña", type="password")
-
-if st.sidebar.button("Ingresar"):
-    if usuario_input in df_usuarios["usuario"].values:
-        stored_pass = df_usuarios.loc[df_usuarios["usuario"] == usuario_input, "contrasena"].values[0]
-        if contrasena_input == stored_pass:
-            st.session_state["usuario"] = usuario_input
+        if not file_list:
+            st.warning("⚠️ No se encontraron archivos en esta carpeta.")
         else:
-            st.sidebar.error("Contraseña incorrecta")
-    else:
-        st.sidebar.error("Usuario no registrado")
+            st.subheader("📄 Archivos encontrados:")
 
-# ---------------- INTERFAZ PRINCIPAL ----------------
-if st.session_state["usuario"]:
-    usuario = st.session_state["usuario"]
-    st.sidebar.success(f"Sesión iniciada: {usuario}")
-    st.markdown(f"### Hola, **{usuario}** 👋")
+            for file in file_list:
+                file_title = file['title']
+                file_id = file['id']
 
-    tabs = st.tabs(["Registrar medicamento", "Consolidado general"])
+                col1, col2, col3 = st.columns([4, 2, 2])
+                with col1:
+                    st.write(f"📘 **{file_title}** (ID: `{file_id}`)")
+                with col2:
+                    if st.button(f"⬇️ Descargar {file_title}", key=file_id):
+                        downloaded = drive.CreateFile({'id': file_id})
+                        downloaded.GetContentFile(file_title)
+                        with open(file_title, "rb") as f:
+                            st.download_button(
+                                label=f"Descargar {file_title}",
+                                data=f,
+                                file_name=file_title,
+                                mime="application/octet-stream"
+                            )
+                with col3:
+                    if st.button(f"🗑️ Eliminar {file_title}", key=f"del_{file_id}"):
+                        downloaded = drive.CreateFile({'id': file_id})
+                        downloaded.Delete()
+                        st.warning(f"🗑️ Archivo **{file_title}** eliminado.")
+                        st.rerun()
 
-    # -------- TAB 1: REGISTRAR --------
-    with tabs[0]:
-        consecutivo = obtener_consecutivo()
-        estado = st.selectbox("Estado", ["Agotado", "Desabastecido", "Descontinuado"], index=0)
-        plu = st.text_input("PLU").upper()
-        codigo_gen = st.text_input("Código genérico").upper()
-        nombre = st.text_input("Nombre del medicamento").upper()
-        laboratorio = st.text_input("Laboratorio").upper()
-        soporte_file = st.file_uploader("📎 Subir soporte PDF", type=["pdf"])
+    except Exception as e:
+        st.error(f"❌ Error al listar archivos: {e}")
 
-        if soporte_file and nombre.strip():
-            nombre_pdf = f"{consecutivo}_{usuario}_{re.sub(r'[^A-Za-z0-9_]', '', nombre.upper())}.pdf"
-            pdf_id = upload_pdf_to_drive(soporte_file, nombre_pdf)
-            st.session_state["ultimo_pdf_id"] = pdf_id
-            st.session_state["ultimo_pdf_name"] = nombre_pdf
-            st.success("✅ PDF subido a Drive correctamente")
+# ==================================
+# SUBIR NUEVO ARCHIVO A LA CARPETA
+# ==================================
+st.subheader("📤 Subir un nuevo archivo")
 
-        if st.button("💾 Guardar registro"):
-            if not nombre.strip():
-                st.warning("Debes ingresar el nombre del medicamento")
-            elif "ultimo_pdf_id" not in st.session_state:
-                st.warning("Debes subir un archivo PDF")
-            else:
-                new_row = pd.DataFrame([[
-                    consecutivo, usuario, estado, plu, codigo_gen,
-                    nombre, laboratorio, datetime.now().strftime("%Y-%m-%d"),
-                    st.session_state["ultimo_pdf_id"], st.session_state["ultimo_pdf_name"]
-                ]], columns=df_registros.columns)
+uploaded_file = st.file_uploader("Selecciona un archivo para subir a Google Drive:", type=None)
 
-                df_registros = pd.concat([df_registros, new_row], ignore_index=True)
-                save_registros_drive(df_registros)
-                st.success("✅ Registro guardado exitosamente en Drive")
-                limpiar_formulario()
-
-    # -------- TAB 2: CONSOLIDADO --------
-    with tabs[1]:
-        st.markdown("### 📋 Consolidado General de Medicamentos")
-        st.dataframe(df_registros)
+if uploaded_file and carpeta_id:
+    try:
+        # Crear archivo en Drive
+        gfile = drive.CreateFile({'title': uploaded_file.name, 'parents': [{'id': carpeta_id}]})
+        gfile.SetContentBytes(uploaded_file.getvalue())
+        gfile.Upload()
+        st.success(f"✅ Archivo '{uploaded_file.name}' subido correctamente a la carpeta seleccionada.")
+        st.rerun()
+    except Exception as e:
+        st.error(f"❌ Error al subir el archivo: {e}")
+elif uploaded_file and not carpeta_id:
+    st.warning("⚠️ Debes ingresar primero un ID de carpeta antes de subir un archivo.")
