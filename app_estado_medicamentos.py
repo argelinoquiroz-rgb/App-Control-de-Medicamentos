@@ -100,12 +100,14 @@ def descargar_csv(df):
 
 # ---------------- AUTENTICACIÓN GOOGLE DRIVE ----------------
 try:
-    creds_dict = json.loads(st.secrets["google_credentials"])
+    creds_dict = st.secrets["google_credentials"]  # esto ya es dict
+    creds_json_str = json.dumps(creds_dict)        # 🔹 convertir a string JSON
+
     with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".yaml") as f:
         f.write(f"""
 client_config_backend: service
 service_config:
-  client_json: {json.dumps(creds_dict)}
+  client_json: {creds_json_str}
 save_credentials: False
 """)
         settings_file = f.name
