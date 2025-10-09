@@ -94,6 +94,7 @@ def descargar_csv(df):
 
 # ---------------- SESIÓN ----------------
 st.sidebar.header("🔐 Inicio de sesión")
+
 if "usuario" not in st.session_state:
     usuario_input = st.sidebar.text_input("Usuario (nombre.apellido)").strip().lower()
     contrasena_input = st.sidebar.text_input("Contraseña", type="password")
@@ -103,22 +104,18 @@ if "usuario" not in st.session_state:
             stored_pass = df_usuarios.loc[df_usuarios["usuario"] == usuario_input, "contrasena"].values[0]
             if contrasena_input == stored_pass:
                 st.session_state["usuario"] = usuario_input
-                st.session_state["login_ok"] = True  # 🚩 Flag para login correcto
+                st.success(f"Bienvenido {usuario_input}")
             else:
                 st.sidebar.error("Contraseña incorrecta")
         else:
             st.sidebar.error("Usuario no registrado")
-    
-    # Renderizar la interfaz solo si login_ok está activo
-    if st.session_state.get("login_ok", False):
-        st.experimental_rerun()
 else:
     st.sidebar.success(f"Sesión iniciada: {st.session_state['usuario']}")
     if st.sidebar.button("Cerrar sesión"):
         st.session_state.clear()
-        st.success("Sesión cerrada. Recarga la página para iniciar de nuevo.")
+        st.experimental_rerun()  # ✅ Solo al cerrar sesión
 
-    # Crear nuevo usuario
+    # ---------------- CREAR USUARIO ----------------
     st.sidebar.markdown("---")
     st.sidebar.markdown("### Crear nuevo usuario")
     nombre_usuario_nuevo = st.sidebar.text_input("Usuario (nombre.apellido)", key="usuario_nuevo").strip().lower()
@@ -183,10 +180,12 @@ if "usuario" in st.session_state:
                                        columns=df_registros.columns)
                 df_registros = pd.concat([df_registros, new_row], ignore_index=True)
                 save_registros(df_registros)
-
-                # Mostrar PDF
                 mostrar_pdf_en_pestana(st.session_state["ultimo_pdf_path"])
                 limpiar_formulario()
+
+        if col2.button("🧹 Limpiar formulario"):
+            limpiar_formulario()
+            st.success("Formulario limpiado ✅")
 
     # -------- TAB CONSOLIDADO --------
     with tabs[1]:
