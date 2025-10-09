@@ -5,8 +5,8 @@ import re
 import base64
 import time
 from datetime import datetime
-import json
 import tempfile
+import json
 
 # ---------------- CONFIGURACIÓN ----------------
 st.set_page_config(page_title="Control de Estado de Medicamentos", layout="wide")
@@ -21,7 +21,7 @@ ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 os.makedirs(SOPORTES_DIR, exist_ok=True)
 os.makedirs(ASSETS_DIR, exist_ok=True)
 
-# Logo
+# Logo (opcional)
 logo_path = os.path.join(ASSETS_DIR, "logo_empresa.png")
 if os.path.exists(logo_path):
     st.image(logo_path, width=180)
@@ -31,6 +31,7 @@ st.markdown("## 🧾 Control de Estado de Medicamentos")
 expected_columns = ["Consecutivo","Usuario", "Estado", "PLU", "Código Genérico",
                     "Nombre Medicamento", "Laboratorio", "Fecha", "Soporte"]
 
+# Cargar registros
 if os.path.exists(DATA_FILE):
     df_registros = pd.read_csv(DATA_FILE)
     for col in expected_columns:
@@ -41,6 +42,7 @@ else:
     df_registros = pd.DataFrame(columns=expected_columns)
     df_registros.to_csv(DATA_FILE, index=False)
 
+# Cargar usuarios
 if os.path.exists(USERS_FILE):
     df_usuarios = pd.read_csv(USERS_FILE)
 else:
@@ -92,25 +94,26 @@ def descargar_csv(df):
     b64 = base64.b64encode(df.to_csv(index=False).encode()).decode()
     st.markdown(f'<a href="data:file/csv;base64,{b64}" download="consolidado_medicamentos.csv">📥 Descargar CSV consolidado</a>', unsafe_allow_html=True)
 
-# ---------------- SUBIR A GOOGLE DRIVE ----------------
+# ---------------- GOOGLE DRIVE ----------------
 def subir_a_drive(archivo_local_path):
     try:
         from pydrive2.auth import GoogleAuth
         from pydrive2.drive import GoogleDrive
 
-        # Archivo local
         if not os.path.exists(archivo_local_path):
             st.error(f"❌ Archivo no encontrado: {archivo_local_path}")
             return
 
-        # Credenciales desde secrets
+        # Guardar JSON temporal
         creds_dict = st.secrets["google_credentials"]
         with tempfile.NamedTemporaryFile(delete=False, mode="w", suffix=".json") as tmpfile:
             json.dump(creds_dict, tmpfile)
             SERVICE_FILE = tmpfile.name
 
+        # Configurar PyDrive2
         gauth = GoogleAuth()
-        gauth.LoadServiceConfig(SERVICE_FILE)
+        gauth.settings['client_config_file'] = SERVICE_FILE
+        gauth.ServiceAuth()  # ✅ sin argumentos
         drive = GoogleDrive(gauth)
 
         carpeta_drive_id = st.secrets.get("carpeta_drive_id", "")
@@ -135,7 +138,7 @@ if "usuario" in st.session_state:
     st.sidebar.success(f"Sesión iniciada: {st.session_state['usuario']}")
     if st.sidebar.button("Cerrar sesión"):
         st.session_state.clear()
-        st.success("Sesión cerrada. Recarga la página para iniciar de nuevo.")
+        st.experimental_rerun()
 else:
     usuario_input = st.sidebar.text_input("Usuario (nombre.apellido)").strip().lower()
     contrasena_input = st.sidebar.text_input("Contraseña", type="password")
@@ -144,7 +147,7 @@ else:
             stored_pass = df_usuarios.loc[df_usuarios["usuario"] == usuario_input, "contrasena"].values[0]
             if contrasena_input == stored_pass:
                 st.session_state["usuario"] = usuario_input
-                st.experimental_rerun()
+                st.experimental_rerun()  # ✅ reinicia la app correctamente
             else:
                 st.sidebar.error("Contraseña incorrecta")
         else:
@@ -179,6 +182,7 @@ if "usuario" in st.session_state:
     st.markdown(f"### Hola, **{usuario}**")
     tabs = st.tabs(["Registrar medicamento", "Consolidado general"])
 
+    # -------- TAB REGISTRO --------
     with tabs[0]:
         consecutivo = obtener_consecutivo()
         estado = st.selectbox("Estado", ["Agotado", "Desabastecido", "Descontinuado"], index=0, key="estado")
@@ -206,6 +210,7 @@ if "usuario" in st.session_state:
             elif "ultimo_pdf_path" not in st.session_state:
                 st.warning("Debes subir un PDF")
             else:
+                # Guardar registro local
                 new_row = pd.DataFrame([[consecutivo, usuario, estado, plu, codigo_gen,
                                          nombre, laboratorio, datetime.now().strftime("%Y-%m-%d"),
                                          st.session_state["ultimo_pdf_path"]]],
@@ -213,7 +218,7 @@ if "usuario" in st.session_state:
                 df_registros = pd.concat([df_registros, new_row], ignore_index=True)
                 save_registros(df_registros)
 
-                # Subir PDF a Drive
+                # Subir a Drive
                 subir_a_drive(st.session_state["ultimo_pdf_path"])
 
                 mostrar_pdf_en_pestana(st.session_state["ultimo_pdf_path"])
@@ -223,6 +228,7 @@ if "usuario" in st.session_state:
             limpiar_formulario()
             st.success("Formulario limpiado ✅")
 
+    # -------- TAB CONSOLIDADO --------
     with tabs[1]:
         st.dataframe(
             df_registros.style.set_table_styles(
@@ -234,9 +240,3 @@ if "usuario" in st.session_state:
         for idx, row in df_registros.iterrows():
             if os.path.exists(row["Soporte"]):
                 st.download_button(
-                    label=f"📥 Descargar {os.path.basename(row['Soporte'])}",
-                    data=open(row["Soporte"], "rb").read(),
-                    file_name=os.path.basename(row["Soporte"]),
-                    mime="application/pdf",
-                    key=f"download_{idx}"
-                )
