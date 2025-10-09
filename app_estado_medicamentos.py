@@ -184,56 +184,39 @@ if "usuario" in st.session_state:
                 df_registros = pd.concat([df_registros, new_row], ignore_index=True)
                 save_registros(df_registros)
 
-                # ---------- SUBIDA A GOOGLE DRIVE ----------
-                try:
-                    # Archivo temporal con credenciales
-                    creds_dict = json.loads(st.secrets["google_credentials"])
-                    with tempfile.NamedTemporaryFile(delete=False, mode="w", suffix=".json") as tmpfile:
-                        json.dump(creds_dict, tmpfile)
-                        SERVICE_FILE = tmpfile.name
+               # ---------------- SUBIR PDF A GOOGLE DRIVE ----------------
+def subir_pdf_drive(ruta_local):
+    try:
+        from pydrive2.auth import GoogleAuth
+        from pydrive2.drive import GoogleDrive
+        import json
+        import tempfile
 
-                    # Autenticación
-                    gauth = GoogleAuth()
-                    gauth.credentials = ServiceAccountCredentials.from_json_keyfile_name(
-                        SERVICE_FILE,
-                        scopes=['https://www.googleapis.com/auth/drive']
-                    )
-                    drive = GoogleDrive(gauth)
+        # Leer credenciales desde st.secrets
+        creds_dict = json.loads(st.secrets["google"]["service_account_file"])
+        carpeta_drive_id = st.secrets["google"]["carpeta_drive_id"]
 
-                    # Subida
-                    carpeta_drive_id = st.secrets.get("carpeta_drive_id", "")
-                    if carpeta_drive_id:
-                        gfile = drive.CreateFile({
-                            'title': os.path.basename(st.session_state["ultimo_pdf_path"]),
-                            'parents':[{'id': carpeta_drive_id}]
-                        })
-                        gfile.SetContentFile(st.session_state["ultimo_pdf_path"])
-                        gfile.Upload()
-                        st.success(f"✅ Archivo subido a Drive: {gfile['title']}")
-                    else:
-                        st.warning("⚠️ No se ha configurado ID de carpeta de Drive en secrets.")
-                except Exception as e:
-                    st.error(f"❌ Error autenticando o subiendo a Google Drive: {e}")
+        # Crear archivo temporal con la credencial
+        with tempfile.NamedTemporaryFile(delete=False, mode="w", suffix=".json") as tmpfile:
+            json.dump(creds_dict, tmpfile)
+            SERVICE_FILE = tmpfile.name
 
-                mostrar_pdf_en_pestana(st.session_state["ultimo_pdf_path"])
-                limpiar_formulario()
+        # Autenticación con PyDrive2 usando ServiceAuth
+        gauth = GoogleAuth()
+        gauth.ServiceAuth(filename=SERVICE_FILE)  # ✅ solo un argumento
 
-    # -------- TAB CONSOLIDADO --------
-    with tabs[1]:
-        st.dataframe(
-            df_registros.style.set_table_styles(
-                [{'selector': 'th', 'props': [('text-align', 'center')]},
-                 {'selector': 'td', 'props': [('text-align', 'center')]}]
-            )
-        )
-        descargar_csv(df_registros)
-        for idx, row in df_registros.iterrows():
-            if os.path.exists(row["Soporte"]):
-                st.download_button(
-                    label=f"📥 Descargar {os.path.basename(row['Soporte'])}",
-                    data=open(row["Soporte"], "rb").read(),
-                    file_name=os.path.basename(row["Soporte"]),
-                    mime="application/pdf",
-                    key=f"download_{idx}"
-                )
+        drive = GoogleDrive(gauth)
 
+        # Subir archivo a la carpeta especificada
+        nombre_archivo = os.path.basename(ruta_local)
+        gfile = drive.CreateFile({'title': nombre_archivo,
+                                  'parents':[{'id': carpeta_drive_id}]})
+        gfile.SetContentFile(ruta_local)
+        gfile.Upload()
+
+        st.success(f"✅ Archivo subido a Drive: {nombre_archivo}")
+        return True
+
+    except Exception as e:
+        st.error(f"❌ Error subiendo a Google Drive: {e}")
+        return False
