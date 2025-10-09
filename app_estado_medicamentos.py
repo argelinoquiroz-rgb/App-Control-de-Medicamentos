@@ -92,48 +92,13 @@ def descargar_csv(df):
     b64 = base64.b64encode(df.to_csv(index=False).encode()).decode()
     st.markdown(f'<a href="data:file/csv;base64,{b64}" download="consolidado_medicamentos.csv">📥 Descargar CSV consolidado</a>', unsafe_allow_html=True)
 
-# ---------------- FUNCIONES DRIVE ----------------
-def subir_a_drive(local_path):
-    try:
-        from pydrive2.auth import GoogleAuth
-        from pydrive2.drive import GoogleDrive
-        import tempfile
-        import json
-
-        # Obtener secrets
-        creds_dict = json.loads(st.secrets["google"]["service_account_file"])
-        carpeta_drive_id = st.secrets["google"]["carpeta_drive_id"]
-
-        # Crear archivo temporal
-        with tempfile.NamedTemporaryFile(delete=False, mode="w", suffix=".json") as tmpfile:
-            json.dump(creds_dict, tmpfile)
-            SERVICE_FILE = tmpfile.name
-
-        # Autenticación
-        gauth = GoogleAuth()
-        gauth.ServiceAuth(service_file=SERVICE_FILE)
-        drive = GoogleDrive(gauth)
-
-        # Crear archivo en Drive
-        gfile = drive.CreateFile({
-            'title': os.path.basename(local_path),
-            'parents':[{'id': carpeta_drive_id}]
-        })
-        gfile.SetContentFile(local_path)
-        gfile.Upload()
-        st.success(f"✅ Archivo subido a Drive: {gfile['title']}")
-        return True
-    except Exception as e:
-        st.error(f"❌ Error subiendo a Google Drive: {e}")
-        return False
-
 # ---------------- SESIÓN ----------------
 st.sidebar.header("🔐 Inicio de sesión")
 if "usuario" in st.session_state:
     st.sidebar.success(f"Sesión iniciada: {st.session_state['usuario']}")
     if st.sidebar.button("Cerrar sesión"):
         st.session_state.clear()
-        st.experimental_rerun()
+        st.success("Sesión cerrada. Recarga la página para iniciar de nuevo.")
 else:
     usuario_input = st.sidebar.text_input("Usuario (nombre.apellido)").strip().lower()
     contrasena_input = st.sidebar.text_input("Contraseña", type="password")
@@ -142,13 +107,12 @@ else:
             stored_pass = df_usuarios.loc[df_usuarios["usuario"] == usuario_input, "contrasena"].values[0]
             if contrasena_input == stored_pass:
                 st.session_state["usuario"] = usuario_input
-                st.experimental_rerun()
+                st.success(f"Bienvenido {usuario_input}")
             else:
                 st.sidebar.error("Contraseña incorrecta")
         else:
             st.sidebar.error("Usuario no registrado")
 
-    # Crear nuevo usuario
     st.sidebar.markdown("---")
     st.sidebar.markdown("### Crear nuevo usuario")
     nombre_usuario_nuevo = st.sidebar.text_input("Usuario (nombre.apellido)", key="usuario_nuevo").strip().lower()
@@ -206,19 +170,44 @@ if "usuario" in st.session_state:
             elif "ultimo_pdf_path" not in st.session_state:
                 st.warning("Debes subir un PDF")
             else:
+                # Guardar registro local
                 new_row = pd.DataFrame([[consecutivo, usuario, estado, plu, codigo_gen,
                                          nombre, laboratorio, datetime.now().strftime("%Y-%m-%d"),
                                          st.session_state["ultimo_pdf_path"]]],
                                        columns=df_registros.columns)
                 df_registros = pd.concat([df_registros, new_row], ignore_index=True)
                 save_registros(df_registros)
+                st.success("✅ Registro guardado localmente")
                 
-                # Subir a Drive
-                subir_a_drive(st.session_state["ultimo_pdf_path"])
+                # Subir a Google Drive
+                try:
+                    from pydrive2.auth import GoogleAuth
+                    from pydrive2.drive import GoogleDrive
+                    import json
+                    import tempfile
+
+                    creds_dict = json.loads(st.secrets["google"]["service_account_file"])
+                    with tempfile.NamedTemporaryFile(delete=False, mode="w", suffix=".json") as tmpfile:
+                        json.dump(creds_dict, tmpfile)
+                        SERVICE_FILE = tmpfile.name
+
+                    gauth = GoogleAuth()
+                    gauth.ServiceAuth(SERVICE_FILE)
+                    drive = GoogleDrive(gauth)
+
+                    carpeta_drive_id = st.secrets["google"]["carpeta_drive_id"]
+                    gfile = drive.CreateFile({'title': os.path.basename(st.session_state["ultimo_pdf_path"]),
+                                              'parents':[{'id': carpeta_drive_id}]})
+                    gfile.SetContentFile(st.session_state["ultimo_pdf_path"])
+                    gfile.Upload()
+                    st.success(f"✅ Archivo subido a Drive: {gfile['title']}")
+                except Exception as e:
+                    st.error(f"❌ Error autenticando o subiendo a Google Drive: {e}")
+
                 limpiar_formulario()
 
     # -------- TAB CONSOLIDADO --------
     with tabs[1]:
+        st.markdown("### 📊 Consolidado de registros")
         st.dataframe(df_registros)
         descargar_csv(df_registros)
-
