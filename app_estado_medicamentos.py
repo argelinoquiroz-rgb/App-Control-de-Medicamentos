@@ -10,11 +10,10 @@ import tempfile
 from pydrive2.auth import GoogleAuth
 from pydrive2.drive import GoogleDrive
 
-# ==============================
-# CONFIGURACIÓN
-# ==============================
+# ---------------- CONFIGURACIÓN ----------------
 st.set_page_config(page_title="Control de Estado de Medicamentos", layout="wide")
 
+# Directorios
 BASE_DIR = os.getcwd()
 DATA_FILE = os.path.join(BASE_DIR, "registros_medicamentos.csv")
 USERS_FILE = os.path.join(BASE_DIR, "usuarios.csv")
@@ -24,16 +23,14 @@ ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 os.makedirs(SOPORTES_DIR, exist_ok=True)
 os.makedirs(ASSETS_DIR, exist_ok=True)
 
-# Logo opcional
+# Logo
 logo_path = os.path.join(ASSETS_DIR, "logo_empresa.png")
 if os.path.exists(logo_path):
     st.image(logo_path, width=180)
 
 st.markdown("## 🧾 Control de Estado de Medicamentos")
 
-# ==============================
-# CREAR ARCHIVOS SI NO EXISTEN
-# ==============================
+# ---------------- CREAR ARCHIVOS SI NO EXISTEN ----------------
 expected_columns = ["Consecutivo","Usuario", "Estado", "PLU", "Código Genérico",
                     "Nombre Medicamento", "Laboratorio", "Fecha", "Soporte"]
 
@@ -59,9 +56,7 @@ df_usuarios["usuario"] = df_usuarios["usuario"].astype(str).str.strip().str.lowe
 df_usuarios["contrasena"] = df_usuarios["contrasena"].astype(str).str.strip()
 df_usuarios["correo"] = df_usuarios.get("correo", pd.Series([""]*len(df_usuarios)))
 
-# ==============================
-# FUNCIONES
-# ==============================
+# ---------------- FUNCIONES ----------------
 def save_registros(df):
     df.to_csv(DATA_FILE, index=False)
 
@@ -102,15 +97,13 @@ def descargar_csv(df):
     b64 = base64.b64encode(df.to_csv(index=False).encode()).decode()
     st.markdown(f'<a href="data:file/csv;base64,{b64}" download="consolidado_medicamentos.csv">📥 Descargar CSV consolidado</a>', unsafe_allow_html=True)
 
-# ==============================
-# SESIÓN
-# ==============================
+# ---------------- SESIÓN ----------------
 st.sidebar.header("🔐 Inicio de sesión")
 if "usuario" in st.session_state:
     st.sidebar.success(f"Sesión iniciada: {st.session_state['usuario']}")
     if st.sidebar.button("Cerrar sesión"):
         st.session_state.clear()
-        st.experimental_rerun()
+        st.success("Sesión cerrada. Recarga la página para iniciar de nuevo.")
 else:
     usuario_input = st.sidebar.text_input("Usuario (nombre.apellido)").strip().lower()
     contrasena_input = st.sidebar.text_input("Contraseña", type="password")
@@ -119,7 +112,7 @@ else:
             stored_pass = df_usuarios.loc[df_usuarios["usuario"] == usuario_input, "contrasena"].values[0]
             if contrasena_input == stored_pass:
                 st.session_state["usuario"] = usuario_input
-                st.experimental_rerun()
+                st.success(f"Bienvenido {usuario_input}")
             else:
                 st.sidebar.error("Contraseña incorrecta")
         else:
@@ -148,9 +141,7 @@ else:
             save_usuarios(df_usuarios)
             st.sidebar.success(f"Usuario creado: {nombre_usuario_nuevo}")
 
-# ==============================
-# INTERFAZ PRINCIPAL
-# ==============================
+# ---------------- INTERFAZ ----------------
 if "usuario" in st.session_state:
     usuario = st.session_state["usuario"]
     st.markdown(f"### Hola, **{usuario}**")
@@ -174,6 +165,7 @@ if "usuario" in st.session_state:
             with open(pdf_path, "wb") as f:
                 f.write(soporte_file.getbuffer())
             st.session_state["ultimo_pdf_path"] = pdf_path
+            st.markdown("### PDF disponible")
             mostrar_pdf_en_pestana(pdf_path)
 
         col1, col2 = st.columns([1,1])
@@ -191,9 +183,7 @@ if "usuario" in st.session_state:
                 df_registros = pd.concat([df_registros, new_row], ignore_index=True)
                 save_registros(df_registros)
 
-                # =======================
                 # Subir PDF a Google Drive
-                # =======================
                 try:
                     creds_dict = json.loads(st.secrets["google_credentials"])
                     with tempfile.NamedTemporaryFile(delete=False, mode="w", suffix=".json") as tmpfile:
@@ -202,7 +192,7 @@ if "usuario" in st.session_state:
 
                     gauth = GoogleAuth()
                     gauth.settings['client_config_file'] = service_file
-                    gauth.ServiceAuth()  # ✅ Solo así funciona con cuenta de servicio
+                    gauth.ServiceAuth()
                     drive = GoogleDrive(gauth)
 
                     carpeta_drive_id = st.secrets.get("carpeta_drive_id", "")
