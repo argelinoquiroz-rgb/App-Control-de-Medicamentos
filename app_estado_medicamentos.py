@@ -81,20 +81,24 @@ if login_btn:
             try:
                 query = f"'{carpeta_id}' in parents and trashed=false"
                 file_list = drive.ListFile({'q': query}).GetList()
+            except Exception as e:
+                st.error(f"❌ Error al listar archivos: {e}")
+                file_list = []
 
-                if not file_list:
-                    st.warning("⚠️ No se encontraron archivos en esta carpeta.")
-                else:
-                    st.subheader("📄 Archivos encontrados:")
-                    for file in file_list:
-                        file_title = file['title']
-                        file_id = file['id']
+            if not file_list:
+                st.warning("⚠️ No se encontraron archivos en esta carpeta.")
+            else:
+                st.subheader("📄 Archivos encontrados:")
+                for file in file_list:
+                    file_title = file['title']
+                    file_id = file['id']
 
-                        col1, col2, col3 = st.columns([4, 2, 2])
-                        with col1:
-                            st.write(f"📘 **{file_title}** (ID: `{file_id}`)")
-                        with col2:
-                            if st.button(f"⬇️ Descargar {file_title}", key=file_id):
+                    col1, col2, col3 = st.columns([4, 2, 2])
+                    with col1:
+                        st.write(f"📘 **{file_title}** (ID: `{file_id}`)")
+                    with col2:
+                        if st.button(f"⬇️ Descargar {file_title}", key=file_id):
+                            try:
                                 downloaded = drive.CreateFile({'id': file_id})
                                 downloaded.GetContentFile(file_title)
                                 with open(file_title, "rb") as f:
@@ -104,12 +108,17 @@ if login_btn:
                                         file_name=file_title,
                                         mime="application/octet-stream"
                                     )
-                        with col3:
-                            if st.button(f"🗑️ Eliminar {file_title}", key=f"del_{file_id}"):
+                            except Exception as e:
+                                st.error(f"❌ Error al descargar {file_title}: {e}")
+                    with col3:
+                        if st.button(f"🗑️ Eliminar {file_title}", key=f"del_{file_id}"):
+                            try:
                                 downloaded = drive.CreateFile({'id': file_id})
                                 downloaded.Delete()
                                 st.warning(f"🗑️ Archivo **{file_title}** eliminado.")
                                 st.experimental_rerun()
+                            except Exception as e:
+                                st.error(f"❌ Error al eliminar {file_title}: {e}")
 
         # ==============================
         # SUBIR NUEVO ARCHIVO
