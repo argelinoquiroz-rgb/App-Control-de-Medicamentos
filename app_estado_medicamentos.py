@@ -4,16 +4,17 @@ import os
 import re
 import base64
 import time
-from datetime import datetime
 import json
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
+import tempfile
+from datetime import datetime
+from pydrive2.auth import GoogleAuth
+from pydrive2.drive import GoogleDrive
+from oauth2client.service_account import ServiceAccountCredentials
 
 # ---------------- CONFIGURACIÓN ----------------
 st.set_page_config(page_title="Control de Estado de Medicamentos", layout="wide")
 
-# Directorios locales
+# Directorios
 BASE_DIR = os.getcwd()
 DATA_FILE = os.path.join(BASE_DIR, "registros_medicamentos.csv")
 USERS_FILE = os.path.join(BASE_DIR, "usuarios.csv")
@@ -23,15 +24,15 @@ ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 os.makedirs(SOPORTES_DIR, exist_ok=True)
 os.makedirs(ASSETS_DIR, exist_ok=True)
 
-# Logo
+# Logo (opcional)
 logo_path = os.path.join(ASSETS_DIR, "logo_empresa.png")
 if os.path.exists(logo_path):
     st.image(logo_path, width=180)
 st.markdown("## 🧾 Control de Estado de Medicamentos")
 
-# ---------------- ARCHIVOS ----------------
-expected_columns = ["Consecutivo","Usuario","Estado","PLU","Código Genérico",
-                    "Nombre Medicamento","Laboratorio","Fecha","Soporte"]
+# ---------------- CREAR ARCHIVOS SI NO EXISTEN ----------------
+expected_columns = ["Consecutivo","Usuario", "Estado", "PLU", "Código Genérico",
+                    "Nombre Medicamento", "Laboratorio", "Fecha", "Soporte"]
 
 # Cargar registros
 if os.path.exists(DATA_FILE):
@@ -48,7 +49,7 @@ else:
 if os.path.exists(USERS_FILE):
     df_usuarios = pd.read_csv(USERS_FILE)
 else:
-    df_usuarios = pd.DataFrame([{"usuario":"admin","contrasena":"1234","correo":"admin@pharmaser.com.co"}])
+    df_usuarios = pd.DataFrame([{"usuario": "admin", "contrasena": "1234", "correo": "admin@pharmaser.com.co"}])
     df_usuarios.to_csv(USERS_FILE, index=False)
 
 df_usuarios["usuario"] = df_usuarios["usuario"].astype(str).str.strip().str.lower()
@@ -96,27 +97,6 @@ def descargar_csv(df):
     b64 = base64.b64encode(df.to_csv(index=False).encode()).decode()
     st.markdown(f'<a href="data:file/csv;base64,{b64}" download="consolidado_medicamentos.csv">📥 Descargar CSV consolidado</a>', unsafe_allow_html=True)
 
-# ---------------- GOOGLE DRIVE ----------------
-def subir_a_drive(local_path, folder_id):
-    try:
-        creds_dict = json.loads(st.secrets["google_credentials"])
-        creds = service_account.Credentials.from_service_account_info(
-            creds_dict,
-            scopes=["https://www.googleapis.com/auth/drive"]
-        )
-        service = build('drive', 'v3', credentials=creds)
-        
-        file_metadata = {
-            'name': os.path.basename(local_path),
-            'parents': [folder_id]
-        }
-        media = MediaFileUpload(local_path, resumable=True)
-        file = service.files().create(body=file_metadata, media_body=media, fields='id, name').execute()
-        return file
-    except Exception as e:
-        st.error(f"❌ Error subiendo a Google Drive: {e}")
-        return None
-
 # ---------------- SESIÓN ----------------
 st.sidebar.header("🔐 Inicio de sesión")
 if "usuario" in st.session_state:
@@ -129,24 +109,48 @@ else:
     contrasena_input = st.sidebar.text_input("Contraseña", type="password")
     if st.sidebar.button("Ingresar"):
         if usuario_input in df_usuarios["usuario"].values:
-            stored_pass = df_usuarios.loc[df_usuarios["usuario"]==usuario_input,"contrasena"].values[0]
+            stored_pass = df_usuarios.loc[df_usuarios["usuario"] == usuario_input, "contrasena"].values[0]
             if contrasena_input == stored_pass:
                 st.session_state["usuario"] = usuario_input
-                st.experimental_rerun()
+                st.experimental_rerun()  # Evita problemas al recargar sesión
             else:
                 st.sidebar.error("Contraseña incorrecta")
         else:
             st.sidebar.error("Usuario no registrado")
 
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### Crear nuevo usuario")
+    nombre_usuario_nuevo = st.sidebar.text_input("Usuario (nombre.apellido)", key="usuario_nuevo").strip().lower()
+    correo_nuevo = st.sidebar.text_input("Correo electrónico", key="correo_nuevo").strip().lower()
+    contrasena_nueva = st.sidebar.text_input("Contraseña", type="password", key="pass_nueva")
+    if st.sidebar.button("Crear usuario"):
+        if not correo_nuevo or not contrasena_nueva or not nombre_usuario_nuevo:
+            st.sidebar.error("Debes ingresar usuario, correo y contraseña")
+        elif not correo_nuevo.endswith("@pharmaser.com.co"):
+            st.sidebar.error("El correo debe terminar en @pharmaser.com.co")
+        elif correo_nuevo in df_usuarios["correo"].values:
+            st.sidebar.error("Este correo ya está registrado")
+        elif nombre_usuario_nuevo in df_usuarios["usuario"].values:
+            st.sidebar.error("Este usuario ya existe")
+        else:
+            df_usuarios = pd.concat([df_usuarios, pd.DataFrame([{
+                "usuario": nombre_usuario_nuevo,
+                "contrasena": contrasena_nueva,
+                "correo": correo_nuevo
+            }])], ignore_index=True)
+            save_usuarios(df_usuarios)
+            st.sidebar.success(f"Usuario creado: {nombre_usuario_nuevo}")
+
 # ---------------- INTERFAZ ----------------
 if "usuario" in st.session_state:
     usuario = st.session_state["usuario"]
     st.markdown(f"### Hola, **{usuario}**")
-    tabs = st.tabs(["Registrar medicamento","Consolidado general"])
+    tabs = st.tabs(["Registrar medicamento", "Consolidado general"])
 
+    # -------- TAB REGISTRO --------
     with tabs[0]:
         consecutivo = obtener_consecutivo()
-        estado = st.selectbox("Estado", ["Agotado","Desabastecido","Descontinuado"], key="estado")
+        estado = st.selectbox("Estado", ["Agotado", "Desabastecido", "Descontinuado"], index=0, key="estado")
         plu = st.text_input("PLU", key="plu").upper()
         codigo_gen_default = plu.split("_")[0] if "_" in plu else ""
         codigo_gen = st.text_input("Código genérico", value=codigo_gen_default, key="codigo_generico").upper()
@@ -158,9 +162,10 @@ if "usuario" in st.session_state:
         if soporte_file is not None and nombre.strip():
             nombre_pdf = f"{consecutivo}_{nombre_valido_archivo(nombre)}.pdf"
             pdf_path = os.path.join(SOPORTES_DIR, nombre_pdf)
-            with open(pdf_path,"wb") as f:
+            with open(pdf_path, "wb") as f:
                 f.write(soporte_file.getbuffer())
             st.session_state["ultimo_pdf_path"] = pdf_path
+            st.markdown("### PDF disponible")
             mostrar_pdf_en_pestana(pdf_path)
 
         col1, col2 = st.columns([1,1])
@@ -170,30 +175,65 @@ if "usuario" in st.session_state:
             elif "ultimo_pdf_path" not in st.session_state:
                 st.warning("Debes subir un PDF")
             else:
-                new_row = pd.DataFrame([[consecutivo, usuario, estado, plu, codigo_gen,
-                                         nombre, laboratorio, datetime.now().strftime("%Y-%m-%d"),
-                                         st.session_state["ultimo_pdf_path"]]],
-                                       columns=df_registros.columns)
-                df_registros = pd.concat([df_registros,new_row], ignore_index=True)
+                # Guardar registro en CSV local
+                new_row = pd.DataFrame([[
+                    consecutivo, usuario, estado, plu, codigo_gen,
+                    nombre, laboratorio, datetime.now().strftime("%Y-%m-%d"),
+                    st.session_state["ultimo_pdf_path"]
+                ]], columns=df_registros.columns)
+                df_registros = pd.concat([df_registros, new_row], ignore_index=True)
                 save_registros(df_registros)
 
-                # Subir PDF a Drive
-                carpeta_drive_id = st.secrets.get("carpeta_drive_id", "")
-                if carpeta_drive_id:
-                    subir_a_drive(st.session_state["ultimo_pdf_path"], carpeta_drive_id)
+                # ---------- SUBIDA A GOOGLE DRIVE ----------
+                try:
+                    # Archivo temporal con credenciales
+                    creds_dict = json.loads(st.secrets["google_credentials"])
+                    with tempfile.NamedTemporaryFile(delete=False, mode="w", suffix=".json") as tmpfile:
+                        json.dump(creds_dict, tmpfile)
+                        SERVICE_FILE = tmpfile.name
 
-                st.success("✅ Registro guardado y PDF subido a Drive")
+                    # Autenticación
+                    gauth = GoogleAuth()
+                    gauth.credentials = ServiceAccountCredentials.from_json_keyfile_name(
+                        SERVICE_FILE,
+                        scopes=['https://www.googleapis.com/auth/drive']
+                    )
+                    drive = GoogleDrive(gauth)
+
+                    # Subida
+                    carpeta_drive_id = st.secrets.get("carpeta_drive_id", "")
+                    if carpeta_drive_id:
+                        gfile = drive.CreateFile({
+                            'title': os.path.basename(st.session_state["ultimo_pdf_path"]),
+                            'parents':[{'id': carpeta_drive_id}]
+                        })
+                        gfile.SetContentFile(st.session_state["ultimo_pdf_path"])
+                        gfile.Upload()
+                        st.success(f"✅ Archivo subido a Drive: {gfile['title']}")
+                    else:
+                        st.warning("⚠️ No se ha configurado ID de carpeta de Drive en secrets.")
+                except Exception as e:
+                    st.error(f"❌ Error autenticando o subiendo a Google Drive: {e}")
+
+                mostrar_pdf_en_pestana(st.session_state["ultimo_pdf_path"])
                 limpiar_formulario()
 
+    # -------- TAB CONSOLIDADO --------
     with tabs[1]:
-        st.dataframe(df_registros)
+        st.dataframe(
+            df_registros.style.set_table_styles(
+                [{'selector': 'th', 'props': [('text-align', 'center')]},
+                 {'selector': 'td', 'props': [('text-align', 'center')]}]
+            )
+        )
         descargar_csv(df_registros)
         for idx, row in df_registros.iterrows():
             if os.path.exists(row["Soporte"]):
                 st.download_button(
                     label=f"📥 Descargar {os.path.basename(row['Soporte'])}",
-                    data=open(row["Soporte"],"rb").read(),
+                    data=open(row["Soporte"], "rb").read(),
                     file_name=os.path.basename(row["Soporte"]),
                     mime="application/pdf",
                     key=f"download_{idx}"
                 )
+
