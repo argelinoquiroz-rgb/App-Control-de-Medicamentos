@@ -237,6 +237,13 @@ if "usuario" in st.session_state:
             )
         )
         descargar_csv(df_registros)
+        # Botones de descarga de PDFs
         for idx, row in df_registros.iterrows():
             if os.path.exists(row["Soporte"]):
                 st.download_button(
+                    label=f"📥 Descargar {os.path.basename(row['Soporte'])}",
+                    data=open(row["Soporte"], "rb").read(),
+                    file_name=os.path.basename(row["Soporte"]),
+                    mime="application/pdf",
+                    key=f"download_{idx}"
+                )
