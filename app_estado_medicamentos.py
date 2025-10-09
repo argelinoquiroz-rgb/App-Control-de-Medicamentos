@@ -5,6 +5,7 @@ import tempfile
 from pydrive2.auth import GoogleAuth
 from pydrive2.drive import GoogleDrive
 from io import BytesIO
+import os
 
 # ==============================
 # CONFIGURACIÓN INICIAL
@@ -13,34 +14,66 @@ st.set_page_config(page_title="Control de Estado de Medicamentos", layout="wide"
 st.title("💊 Control de Estado de Medicamentos")
 
 # ==============================
+# ARCHIVO DE USUARIOS
+# ==============================
+USERS_FILE = "usuarios.csv"
+
+# Crear archivo si no existe
+if not os.path.exists(USERS_FILE):
+    df = pd.DataFrame(columns=["usuario", "password", "rol"])
+    # Crear usuario admin inicial
+    df.loc[0] = ["admin", "1234", "admin"]
+    df.to_csv(USERS_FILE, index=False)
+
+# Cargar usuarios
+usuarios_df = pd.read_csv(USERS_FILE)
+
+# ==============================
 # LOGIN DE USUARIO
 # ==============================
-USERS = {
-    "admin": "1234",
-    "usuario1": "abcd",
-    # Agrega más usuarios si es necesario
-}
-
 if "login" not in st.session_state:
     st.session_state.login = False
+    st.session_state.user = None
+    st.session_state.rol = None
 
 if not st.session_state.login:
     st.subheader("🔑 Iniciar sesión")
     username = st.text_input("Usuario")
     password = st.text_input("Contraseña", type="password")
     if st.button("Entrar"):
-        if username in USERS and USERS[username] == password:
+        user_row = usuarios_df[(usuarios_df["usuario"] == username) & (usuarios_df["password"] == password)]
+        if not user_row.empty:
             st.session_state.login = True
             st.session_state.user = username
+            st.session_state.rol = user_row.iloc[0]["rol"]
             st.success(f"Bienvenido {username}")
             st.experimental_rerun()
         else:
-            st.error("Usuario o contraseña incorrectos")
+            st.error("❌ Usuario o contraseña incorrectos")
 else:
-    st.write(f"✅ Usuario autenticado: **{st.session_state.user}**")
+    st.write(f"✅ Usuario autenticado: **{st.session_state.user}** (Rol: {st.session_state.rol})")
 
     # ==============================
-    # CARGAR CREDENCIALES DE GOOGLE DRIVE
+    # REGISTRO DE NUEVOS USUARIOS (solo admin)
+    # ==============================
+    if st.session_state.rol == "admin":
+        st.subheader("➕ Registrar nuevo usuario")
+        nuevo_usuario = st.text_input("Nuevo usuario")
+        nueva_contrasena = st.text_input("Contraseña", type="password")
+        rol_usuario = st.selectbox("Rol del usuario", ["usuario", "admin"])
+        if st.button("Registrar usuario"):
+            if nuevo_usuario in usuarios_df["usuario"].values:
+                st.warning("⚠️ El usuario ya existe")
+            elif nuevo_usuario == "" or nueva_contrasena == "":
+                st.warning("⚠️ Usuario y contraseña no pueden estar vacíos")
+            else:
+                usuarios_df.loc[len(usuarios_df)] = [nuevo_usuario, nueva_contrasena, rol_usuario]
+                usuarios_df.to_csv(USERS_FILE, index=False)
+                st.success(f"✅ Usuario '{nuevo_usuario}' registrado correctamente")
+                st.experimental_rerun()
+
+    # ==============================
+    # CONEXIÓN A GOOGLE DRIVE
     # ==============================
     try:
         creds_dict = json.loads(st.secrets["google_credentials"])
@@ -54,7 +87,7 @@ else:
 
     try:
         gauth = GoogleAuth()
-        gauth.LoadServiceConfigFile(SERVICE_FILE)  # ⚡ Autenticación correcta con pydrive2
+        gauth.LoadServiceConfigFile(SERVICE_FILE)
         gauth.ServiceAuth()
         drive = GoogleDrive(gauth)
         st.success("✅ Conexión exitosa con Google Drive mediante cuenta de servicio.")
