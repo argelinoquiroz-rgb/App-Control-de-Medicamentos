@@ -106,6 +106,8 @@ if login_btn:
                                 downloaded.Delete()
                                 st.warning(f"🗑️ Archivo **{file_title}** eliminado.")
                                 st.experimental_rerun()
+            except Exception as e:
+                st.error(f"❌ Error al listar archivos: {e}")
 
         # ==================================
         # SUBIR NUEVO ARCHIVO A LA CARPETA
@@ -127,4 +129,3 @@ if login_btn:
                 st.error(f"❌ Error al subir el archivo: {e}")
         elif uploaded_file and not carpeta_id:
             st.warning("⚠️ Debes ingresar primero un ID de carpeta antes de subir un archivo.")
-
