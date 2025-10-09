@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import json
 import tempfile
+import os
 from pydrive2.auth import GoogleAuth
 from pydrive2.drive import GoogleDrive
 
@@ -12,17 +13,18 @@ st.set_page_config(page_title="Control de Estado de Medicamentos", layout="wide"
 st.title("💊 Control de Estado de Medicamentos")
 
 # ==================================
-# LOGIN DE USUARIOS
+# USUARIOS (ADMIN INICIAL)
 # ==================================
-try:
-    usuarios_df = pd.read_csv("usuarios.csv")
-    if "usuario" not in usuarios_df.columns or "contrasena" not in usuarios_df.columns:
-        st.error("❌ Columnas 'usuario' o 'contrasena' no encontradas en usuarios.csv")
-        st.stop()
-except FileNotFoundError:
-    st.error("❌ Archivo usuarios.csv no encontrado")
-    st.stop()
+# Usuario administrador predeterminado
+usuarios_df = pd.DataFrame([{
+    "correo_electronico": "lidercompras@pharmaser.com.co",
+    "usuario": "admin",
+    "contrasena": "250382"
+}])
 
+# ==================================
+# LOGIN
+# ==================================
 with st.form("login_form"):
     username = st.text_input("Usuario")
     password = st.text_input("Contraseña", type="password")
@@ -45,14 +47,17 @@ except Exception as e:
     st.error("❌ No se pudo cargar 'google_credentials' desde st.secrets")
     st.stop()
 
+# Crear archivo temporal con credenciales
 with tempfile.NamedTemporaryFile(delete=False, mode="w", suffix=".json") as tmpfile:
     json.dump(creds_dict, tmpfile)
     SERVICE_FILE = tmpfile.name
 
+# Establecer variable de entorno para PyDrive2
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = SERVICE_FILE
+
 try:
     gauth = GoogleAuth()
-    gauth.LoadServiceConfigFile = SERVICE_FILE  # Método correcto para PyDrive2 reciente
-    gauth.ServiceAuth()
+    gauth.ServiceAuth()  # ✅ autenticación correcta
     drive = GoogleDrive(gauth)
     st.success("✅ Conexión exitosa con Google Drive mediante cuenta de servicio.")
 except Exception as e:
