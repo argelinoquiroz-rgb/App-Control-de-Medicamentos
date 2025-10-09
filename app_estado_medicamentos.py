@@ -3,8 +3,8 @@ import pandas as pd
 import re
 import hashlib
 from datetime import datetime
-from pydrive.auth import GoogleAuth
-from pydrive.drive import GoogleDrive
+from pydrive2.auth import GoogleAuth
+from pydrive2.drive import GoogleDrive
 import io
 import base64
 import os
