@@ -97,18 +97,28 @@ st.sidebar.header("🔐 Inicio de sesión")
 if "usuario" not in st.session_state:
     usuario_input = st.sidebar.text_input("Usuario (nombre.apellido)").strip().lower()
     contrasena_input = st.sidebar.text_input("Contraseña", type="password")
+    
     if st.sidebar.button("Ingresar"):
         if usuario_input in df_usuarios["usuario"].values:
             stored_pass = df_usuarios.loc[df_usuarios["usuario"] == usuario_input, "contrasena"].values[0]
             if contrasena_input == stored_pass:
                 st.session_state["usuario"] = usuario_input
-                st.sidebar.success(f"Bienvenido {usuario_input}")
-                st.experimental_rerun()  # ✅ Solo dentro del botón
+                st.session_state["login_ok"] = True  # 🚩 Flag para login correcto
             else:
                 st.sidebar.error("Contraseña incorrecta")
         else:
             st.sidebar.error("Usuario no registrado")
+    
+    # Renderizar la interfaz solo si login_ok está activo
+    if st.session_state.get("login_ok", False):
+        st.experimental_rerun()
+else:
+    st.sidebar.success(f"Sesión iniciada: {st.session_state['usuario']}")
+    if st.sidebar.button("Cerrar sesión"):
+        st.session_state.clear()
+        st.success("Sesión cerrada. Recarga la página para iniciar de nuevo.")
 
+    # Crear nuevo usuario
     st.sidebar.markdown("---")
     st.sidebar.markdown("### Crear nuevo usuario")
     nombre_usuario_nuevo = st.sidebar.text_input("Usuario (nombre.apellido)", key="usuario_nuevo").strip().lower()
@@ -131,14 +141,6 @@ if "usuario" not in st.session_state:
             }])], ignore_index=True)
             save_usuarios(df_usuarios)
             st.sidebar.success(f"Usuario creado: {nombre_usuario_nuevo}")
-            st.experimental_rerun()  # ✅ Solo dentro del botón
-else:
-    usuario = st.session_state["usuario"]
-    st.sidebar.success(f"Sesión iniciada: {usuario}")
-    if st.sidebar.button("Cerrar sesión"):
-        st.session_state.clear()
-        st.success("Sesión cerrada. Recarga la página para iniciar de nuevo.")
-        st.experimental_rerun()  # ✅ Solo dentro del botón
 
 # ---------------- INTERFAZ ----------------
 if "usuario" in st.session_state:
@@ -174,13 +176,15 @@ if "usuario" in st.session_state:
             elif "ultimo_pdf_path" not in st.session_state:
                 st.warning("Debes subir un PDF")
             else:
+                # Guardar registro local
                 new_row = pd.DataFrame([[consecutivo, usuario, estado, plu, codigo_gen,
                                          nombre, laboratorio, datetime.now().strftime("%Y-%m-%d"),
                                          st.session_state["ultimo_pdf_path"]]],
                                        columns=df_registros.columns)
                 df_registros = pd.concat([df_registros, new_row], ignore_index=True)
                 save_registros(df_registros)
-                st.success("✅ Registro guardado")
+
+                # Mostrar PDF
                 mostrar_pdf_en_pestana(st.session_state["ultimo_pdf_path"])
                 limpiar_formulario()
 
@@ -202,5 +206,3 @@ if "usuario" in st.session_state:
                     mime="application/pdf",
                     key=f"download_{idx}"
                 )
-
-
