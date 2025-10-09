@@ -5,6 +5,8 @@ import re
 import base64
 import time
 from datetime import datetime
+import json
+import tempfile
 
 # ---------------- CONFIGURACIÓN ----------------
 st.set_page_config(page_title="Control de Estado de Medicamentos", layout="wide")
@@ -19,7 +21,7 @@ ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 os.makedirs(SOPORTES_DIR, exist_ok=True)
 os.makedirs(ASSETS_DIR, exist_ok=True)
 
-# Logo (opcional)
+# Logo
 logo_path = os.path.join(ASSETS_DIR, "logo_empresa.png")
 if os.path.exists(logo_path):
     st.image(logo_path, width=180)
@@ -29,7 +31,6 @@ st.markdown("## 🧾 Control de Estado de Medicamentos")
 expected_columns = ["Consecutivo","Usuario", "Estado", "PLU", "Código Genérico",
                     "Nombre Medicamento", "Laboratorio", "Fecha", "Soporte"]
 
-# Cargar registros
 if os.path.exists(DATA_FILE):
     df_registros = pd.read_csv(DATA_FILE)
     for col in expected_columns:
@@ -40,7 +41,6 @@ else:
     df_registros = pd.DataFrame(columns=expected_columns)
     df_registros.to_csv(DATA_FILE, index=False)
 
-# Cargar usuarios
 if os.path.exists(USERS_FILE):
     df_usuarios = pd.read_csv(USERS_FILE)
 else:
@@ -92,30 +92,40 @@ def descargar_csv(df):
     b64 = base64.b64encode(df.to_csv(index=False).encode()).decode()
     st.markdown(f'<a href="data:file/csv;base64,{b64}" download="consolidado_medicamentos.csv">📥 Descargar CSV consolidado</a>', unsafe_allow_html=True)
 
-def subir_a_drive(ruta_local, carpeta_id):
+# ---------------- SUBIR A GOOGLE DRIVE ----------------
+def subir_a_drive(archivo_local_path):
     try:
         from pydrive2.auth import GoogleAuth
         from pydrive2.drive import GoogleDrive
-        import json
-        import tempfile
 
-        creds_dict = json.loads(st.secrets["google_credentials"])
+        # Archivo local
+        if not os.path.exists(archivo_local_path):
+            st.error(f"❌ Archivo no encontrado: {archivo_local_path}")
+            return
+
+        # Credenciales desde secrets
+        creds_dict = st.secrets["google_credentials"]
         with tempfile.NamedTemporaryFile(delete=False, mode="w", suffix=".json") as tmpfile:
             json.dump(creds_dict, tmpfile)
             SERVICE_FILE = tmpfile.name
 
         gauth = GoogleAuth()
-        gauth.settings['client_config_file'] = SERVICE_FILE
-        gauth.ServiceAuth()  # ✅ Corrección clave: no pasar argumentos
+        gauth.LoadServiceConfig(SERVICE_FILE)
         drive = GoogleDrive(gauth)
 
-        if carpeta_id:
-            gfile = drive.CreateFile({'title': os.path.basename(ruta_local), 'parents':[{'id': carpeta_id}]})
-            gfile.SetContentFile(ruta_local)
-            gfile.Upload()
-            st.success(f"✅ Archivo subido a Drive: {gfile['title']}")
-        else:
-            st.warning("⚠️ No se ha configurado ID de carpeta de Drive en secrets.")
+        carpeta_drive_id = st.secrets.get("carpeta_drive_id", "")
+        if not carpeta_drive_id:
+            st.warning("⚠️ No se ha configurado el ID de la carpeta de Drive en st.secrets")
+            return
+
+        gfile = drive.CreateFile({
+            'title': os.path.basename(archivo_local_path),
+            'parents': [{'id': carpeta_drive_id}]
+        })
+        gfile.SetContentFile(archivo_local_path)
+        gfile.Upload()
+        st.success(f"✅ Archivo subido a Drive: {gfile['title']}")
+
     except Exception as e:
         st.error(f"❌ Error autenticando o subiendo a Google Drive: {e}")
 
@@ -125,7 +135,7 @@ if "usuario" in st.session_state:
     st.sidebar.success(f"Sesión iniciada: {st.session_state['usuario']}")
     if st.sidebar.button("Cerrar sesión"):
         st.session_state.clear()
-        st.experimental_rerun()
+        st.success("Sesión cerrada. Recarga la página para iniciar de nuevo.")
 else:
     usuario_input = st.sidebar.text_input("Usuario (nombre.apellido)").strip().lower()
     contrasena_input = st.sidebar.text_input("Contraseña", type="password")
@@ -169,7 +179,6 @@ if "usuario" in st.session_state:
     st.markdown(f"### Hola, **{usuario}**")
     tabs = st.tabs(["Registrar medicamento", "Consolidado general"])
 
-    # -------- TAB REGISTRO --------
     with tabs[0]:
         consecutivo = obtener_consecutivo()
         estado = st.selectbox("Estado", ["Agotado", "Desabastecido", "Descontinuado"], index=0, key="estado")
@@ -204,9 +213,8 @@ if "usuario" in st.session_state:
                 df_registros = pd.concat([df_registros, new_row], ignore_index=True)
                 save_registros(df_registros)
 
-                # Subir PDF a Google Drive
-                carpeta_drive_id = st.secrets.get("carpeta_drive_id", "")
-                subir_a_drive(st.session_state["ultimo_pdf_path"], carpeta_drive_id)
+                # Subir PDF a Drive
+                subir_a_drive(st.session_state["ultimo_pdf_path"])
 
                 mostrar_pdf_en_pestana(st.session_state["ultimo_pdf_path"])
                 limpiar_formulario()
@@ -215,7 +223,6 @@ if "usuario" in st.session_state:
             limpiar_formulario()
             st.success("Formulario limpiado ✅")
 
-    # -------- TAB CONSOLIDADO --------
     with tabs[1]:
         st.dataframe(
             df_registros.style.set_table_styles(
