@@ -19,17 +19,15 @@ if "google_credentials" not in st.secrets:
     st.error("❌ No se encontraron credenciales en st.secrets. Configura 'google_credentials' en la pestaña Secrets.")
     st.stop()
 
-# Guardar temporalmente las credenciales en un archivo
-SERVICE_FILE = "service_account.json"
-with open(SERVICE_FILE, "w") as f:
-    json.dump(dict(st.secrets["google_credentials"]), f)
+# Convertir el JSON de credenciales a un diccionario
+creds_dict = json.loads(st.secrets["google_credentials"])
 
+# Autenticación directa con PyDrive2
 gauth = GoogleAuth()
-gauth.LoadServiceConfigSettings()
-gauth.LoadCredentialsFile(SERVICE_FILE)
-gauth.ServiceAuth()
+gauth.ServiceAuth(creds_dict)
 drive = GoogleDrive(gauth)
 
+# ID de la carpeta y nombre del CSV en Google Drive
 FOLDER_ID = "1AzQrHdxkkdWYnKbu0zLeIeM8jgXbMCZF"
 CSV_NAME = "registros_medicamentos.csv"
 
@@ -156,5 +154,6 @@ if st.session_state["usuario"]:
 
     with tabs[1]:
         st.dataframe(df_registros)
+
 
 
