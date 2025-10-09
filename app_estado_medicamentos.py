@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import json
+import tempfile
 from pydrive2.auth import GoogleAuth
 from pydrive2.drive import GoogleDrive
 from io import BytesIO
@@ -15,21 +16,38 @@ st.title("💊 Control de Estado de Medicamentos")
 # CARGAR CREDENCIALES DESDE st.secrets
 # ==================================
 try:
-    creds_dict = json.loads(st.secrets["google_credentials"])  # JSON de la cuenta de servicio
+    creds_dict = json.loads(st.secrets["google_credentials"])
 except Exception as e:
-    st.error("❌ No se pudo cargar 'google_credentials' desde st.secrets. Verifica que esté correctamente configurado.")
+    st.error("❌ No se pudo cargar 'google_credentials' desde st.secrets.")
     st.stop()
 
 # ==================================
-# AUTENTICACIÓN CON CUENTA DE SERVICIO
+# CREAR ARCHIVO TEMPORAL CON JSON DE SERVICIO
+# ==================================
+with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as tmp:
+    json.dump(creds_dict, tmp)
+    service_file = tmp.name
+
+# ==================================
+# CREAR ARCHIVO DE CONFIGURACIÓN TEMPORAL PARA PyDrive2
+# ==================================
+settings_json = {
+    "client_config_backend": "service",
+    "service_config": {
+        "client_json_file_path": service_file
+    }
+}
+
+with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as tmp:
+    json.dump(settings_json, tmp)
+    settings_file = tmp.name
+
+# ==================================
+# AUTENTICACIÓN CON GOOGLE DRIVE
 # ==================================
 try:
-    gauth = GoogleAuth()
-    gauth.LoadServiceConfig()          # Inicializa configuración interna
-    gauth.auth_method = 'service'      # Método de autenticación con servicio
-    gauth.credentials = creds_dict     # Asignamos el diccionario de secrets directamente
-    gauth.Authorize()                  # Autoriza con la cuenta de servicio
-
+    gauth = GoogleAuth(settings_file=settings_file)
+    gauth.ServiceAuth()  # ✅ Autenticación con cuenta de servicio
     drive = GoogleDrive(gauth)
     st.success("✅ Conexión exitosa con Google Drive mediante cuenta de servicio.")
 except Exception as e:
@@ -40,10 +58,13 @@ except Exception as e:
 # CONFIGURACIÓN DE CARPETA EN DRIVE
 # ==================================
 st.subheader("📁 Configuración de carpeta")
+
+# Ingresa el ID de la carpeta de Google Drive
 carpeta_id = st.text_input("🔑 Ingresa el ID de la carpeta en Google Drive:", "")
 
 if carpeta_id:
     st.info(f"📂 Buscando archivos dentro de la carpeta con ID: `{carpeta_id}`")
+
     try:
         query = f"'{carpeta_id}' in parents and trashed=false"
         file_list = drive.ListFile({'q': query}).GetList()
@@ -52,6 +73,7 @@ if carpeta_id:
             st.warning("⚠️ No se encontraron archivos en esta carpeta.")
         else:
             st.subheader("📄 Archivos encontrados:")
+
             for file in file_list:
                 file_title = file['title']
                 file_id = file['id']
@@ -76,6 +98,7 @@ if carpeta_id:
                         downloaded.Delete()
                         st.warning(f"🗑️ Archivo **{file_title}** eliminado.")
                         st.rerun()
+
     except Exception as e:
         st.error(f"❌ Error al listar archivos: {e}")
 
@@ -83,6 +106,7 @@ if carpeta_id:
 # SUBIR NUEVO ARCHIVO A LA CARPETA
 # ==================================
 st.subheader("📤 Subir un nuevo archivo")
+
 uploaded_file = st.file_uploader("Selecciona un archivo para subir a Google Drive:", type=None)
 
 if uploaded_file and carpeta_id:
