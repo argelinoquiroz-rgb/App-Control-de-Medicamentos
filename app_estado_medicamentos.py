@@ -143,62 +143,49 @@ if "usuario" in st.session_state:
     tabs = st.tabs(["Registrar medicamento", "Consolidado general"])
 
     # -------- TAB REGISTRO --------
-    with tabs[0]:
-        consecutivo = obtener_consecutivo()
-        estado = st.selectbox("Estado", ["Agotado", "Desabastecido", "Descontinuado"], index=0, key="estado")
-        plu = st.text_input("PLU", key="plu").upper()
-        codigo_gen_default = plu.split("_")[0] if "_" in plu else ""
-        codigo_gen = st.text_input("Código genérico", value=codigo_gen_default, key="codigo_generico").upper()
-        nombre = st.text_input("Nombre del medicamento", key="nombre_medicamento").upper()
-        laboratorio = st.text_input("Laboratorio", key="laboratorio").upper()
-        soporte_file = st.file_uploader("📎 Subir soporte PDF", type=["pdf"], key="soporte_file")
-        st.date_input("Fecha", value=datetime.now(), disabled=True)
+with tabs[0]:
+    ...
+    if col1.button("💾 Guardar registro"):
+        if not nombre.strip():
+            st.warning("Debes ingresar el nombre del medicamento")
+        elif "ultimo_pdf_path" not in st.session_state:
+            st.warning("Debes subir un PDF")
+        else:
+            # Guardar PDF local
+            new_row = pd.DataFrame([[consecutivo, usuario, estado, plu, codigo_gen,
+                                     nombre, laboratorio, datetime.now().strftime("%Y-%m-%d"),
+                                     st.session_state["ultimo_pdf_path"]]],
+                                   columns=df_registros.columns)
+            df_registros = pd.concat([df_registros, new_row], ignore_index=True)
+            save_registros(df_registros)
+            
+            # Subir a Google Drive
+            try:
+                from pydrive2.auth import GoogleAuth
+                from pydrive2.drive import GoogleDrive
+                import json
+                import tempfile
 
-        if soporte_file is not None and nombre.strip():
-            nombre_pdf = f"{consecutivo}_{nombre_valido_archivo(nombre)}.pdf"
-            pdf_path = os.path.join(SOPORTES_DIR, nombre_pdf)
-            with open(pdf_path, "wb") as f:
-                f.write(soporte_file.getbuffer())
-            st.session_state["ultimo_pdf_path"] = pdf_path
-            st.markdown("### PDF disponible")
-            mostrar_pdf_en_pestana(pdf_path)
+                creds_dict = json.loads(st.secrets["google_credentials"])
+                with tempfile.NamedTemporaryFile(delete=False, mode="w", suffix=".json") as tmpfile:
+                    json.dump(creds_dict, tmpfile)
+                    SERVICE_FILE = tmpfile.name
 
-        col1, col2 = st.columns([1,1])
-        if col1.button("💾 Guardar registro"):
-            if not nombre.strip():
-                st.warning("Debes ingresar el nombre del medicamento")
-            elif "ultimo_pdf_path" not in st.session_state:
-                st.warning("Debes subir un PDF")
-            else:
-                new_row = pd.DataFrame([[consecutivo, usuario, estado, plu, codigo_gen,
-                                         nombre, laboratorio, datetime.now().strftime("%Y-%m-%d"),
-                                         st.session_state["ultimo_pdf_path"]]],
-                                       columns=df_registros.columns)
-                df_registros = pd.concat([df_registros, new_row], ignore_index=True)
-                save_registros(df_registros)
-                st.success("✅ Registro guardado")
-                mostrar_pdf_en_pestana(st.session_state["ultimo_pdf_path"])
-                limpiar_formulario()
+                gauth = GoogleAuth()
+                gauth.ServiceAuth(SERVICE_FILE)
+                drive = GoogleDrive(gauth)
 
-        if col2.button("🧹 Limpiar formulario"):
+                carpeta_drive_id = st.secrets.get("carpeta_drive_id", "")
+                if carpeta_drive_id:
+                    gfile = drive.CreateFile({'title': os.path.basename(st.session_state["ultimo_pdf_path"]),
+                                              'parents':[{'id': carpeta_drive_id}]})
+                    gfile.SetContentFile(st.session_state["ultimo_pdf_path"])
+                    gfile.Upload()
+                    st.success(f"✅ Archivo subido a Drive: {gfile['title']}")
+                else:
+                    st.warning("⚠️ No se ha configurado ID de carpeta de Drive en secrets.")
+            except Exception as e:
+                st.error(f"❌ Error autenticando o subiendo a Google Drive: {e}")
+            
+            mostrar_pdf_en_pestana(st.session_state["ultimo_pdf_path"])
             limpiar_formulario()
-            st.success("Formulario limpiado ✅")
-
-    # -------- TAB CONSOLIDADO --------
-    with tabs[1]:
-        st.dataframe(
-            df_registros.style.set_table_styles(
-                [{'selector': 'th', 'props': [('text-align', 'center')]},
-                 {'selector': 'td', 'props': [('text-align', 'center')]}]
-            )
-        )
-        descargar_csv(df_registros)
-        for idx, row in df_registros.iterrows():
-            if os.path.exists(row["Soporte"]):
-                st.download_button(
-                    label=f"📥 Descargar {os.path.basename(row['Soporte'])}",
-                    data=open(row["Soporte"], "rb").read(),
-                    file_name=os.path.basename(row["Soporte"]),
-                    mime="application/pdf",
-                    key=f"download_{idx}"
-                )
