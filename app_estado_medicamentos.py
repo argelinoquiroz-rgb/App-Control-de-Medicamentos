@@ -156,5 +156,46 @@ else:
         elif nombre_usuario_nuevo in df_usuarios["usuario"].values:
             st.sidebar.error("Este usuario ya existe")
         else:
-            df_us_
+            df_usuarios = pd.concat([df_usuarios, pd.DataFrame([{
+                "usuario": nombre_usuario_nuevo,
+                "contrasena": contrasena_nueva,
+                "correo": correo_nuevo
+            }])], ignore_index=True)
+            save_usuarios(df_usuarios)
+            st.sidebar.success(f"Usuario creado: {nombre_usuario_nuevo}")
 
+# ---------------- INTERFAZ ----------------
+if "usuario" in st.session_state:
+    usuario = st.session_state["usuario"]
+    st.markdown(f"### Hola, **{usuario}**")
+    tabs = st.tabs(["Registrar medicamento", "Consolidado general"])
+
+    # -------- TAB REGISTRO --------
+    with tabs[0]:
+        consecutivo = obtener_consecutivo()
+        estado = st.selectbox("Estado", ["Agotado", "Desabastecido", "Descontinuado"], index=0, key="estado")
+        plu = st.text_input("PLU", key="plu").upper()
+        codigo_gen_default = plu.split("_")[0] if "_" in plu else ""
+        codigo_gen = st.text_input("Código genérico", value=codigo_gen_default, key="codigo_generico").upper()
+        nombre = st.text_input("Nombre del medicamento", key="nombre_medicamento").upper()
+        laboratorio = st.text_input("Laboratorio", key="laboratorio").upper()
+        soporte_file = st.file_uploader("📎 Subir soporte PDF", type=["pdf"], key="soporte_file")
+        st.date_input("Fecha", value=datetime.now(), disabled=True)
+
+        if soporte_file is not None and nombre.strip():
+            nombre_pdf = f"{consecutivo}_{nombre_valido_archivo(nombre)}.pdf"
+            pdf_path = os.path.join(SOPORTES_DIR, nombre_pdf)
+            with open(pdf_path, "wb") as f:
+                f.write(soporte_file.getbuffer())
+            st.session_state["ultimo_pdf_path"] = pdf_path
+            mostrar_pdf_en_pestana(pdf_path)
+
+        col1, col2 = st.columns([1,1])
+        if col1.button("💾 Guardar registro"):
+            if not nombre.strip():
+                st.warning("Debes ingresar el nombre del medicamento")
+            elif "ultimo_pdf_path" not in st.session_state:
+                st.warning("Debes subir un PDF")
+            else:
+                new_row = pd.DataFrame([[
+                    consecutivo, usuario
