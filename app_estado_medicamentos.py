@@ -3,7 +3,6 @@ import pandas as pd
 import os
 import re
 import base64
-import time
 from datetime import datetime
 from pydrive2.auth import GoogleAuth
 from pydrive2.drive import GoogleDrive
@@ -13,12 +12,11 @@ import tempfile
 # ---------------- CONFIGURACIÓN ----------------
 st.set_page_config(page_title="Control de Estado de Medicamentos", layout="wide")
 
-# Directorios
 BASE_DIR = os.getcwd()
 DATA_FILE = os.path.join(BASE_DIR, "registros_medicamentos.csv")
 USERS_FILE = os.path.join(BASE_DIR, "usuarios.csv")
 
-# ---------------- CARGAR CSVS ----------------
+# ---------------- CARGAR CSVs ----------------
 expected_columns = ["Consecutivo","Usuario", "Estado", "PLU", "Código Genérico",
                     "Nombre Medicamento", "Laboratorio", "Fecha", "Soporte"]
 if os.path.exists(DATA_FILE):
@@ -72,7 +70,7 @@ def autenticar_drive():
 
     gauth = GoogleAuth()
     gauth.settings['client_config_file'] = service_file
-    gauth.ServiceAuth()  # ✅ correcto para cuenta de servicio
+    gauth.ServiceAuth()
     drive = GoogleDrive(gauth)
     return drive
 
@@ -151,16 +149,16 @@ if "usuario" in st.session_state:
                 st.warning("Debes subir un PDF")
             else:
                 nombre_pdf = f"{consecutivo}_{nombre_valido_archivo(nombre)}.pdf"
-                # Guardar temporalmente
-                temp_path = os.path.join(BASE_DIR, nombre_pdf)
-                with open(temp_path, "wb") as f:
-                    f.write(soporte_file.getbuffer())
+                # Crear archivo temporal
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                    tmp.write(soporte_file.getbuffer())
+                    tmp_path = tmp.name
 
                 # Subir a Drive
                 try:
                     carpeta_drive_id = st.secrets["carpeta_drive_id"]
                     gfile = drive.CreateFile({'title': nombre_pdf, 'parents':[{'id': carpeta_drive_id}]})
-                    gfile.SetContentFile(temp_path)
+                    gfile.SetContentFile(tmp_path)
                     gfile.Upload()
                     st.success(f"✅ Archivo subido a Drive: {nombre_pdf}")
                 except Exception as e:
@@ -179,3 +177,9 @@ if "usuario" in st.session_state:
     with tabs[1]:
         st.dataframe(df_registros)
         descargar_csv(df_registros)
+        st.markdown("### 🗂 Archivos en Drive")
+        carpeta_drive_id = st.secrets["carpeta_drive_id"]
+        file_list = drive.ListFile({'q': f"'{carpeta_drive_id}' in parents and trashed=false"}).GetList()
+        for file in file_list:
+            st.markdown(f"- 📄 {file['title']} ([Descargar]({file['alternateLink']}))")
+
