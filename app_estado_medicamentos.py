@@ -3,18 +3,13 @@ import pandas as pd
 import os
 import re
 import base64
-import tempfile
-import json
+import time
 from datetime import datetime
-from pydrive2.auth import GoogleAuth
-from pydrive2.drive import GoogleDrive
 
-# ==============================
-# CONFIGURACIÓN INICIAL
-# ==============================
+# ---------------- CONFIGURACIÓN ----------------
 st.set_page_config(page_title="Control de Estado de Medicamentos", layout="wide")
 
-# Directorios locales
+# Directorios
 BASE_DIR = os.getcwd()
 DATA_FILE = os.path.join(BASE_DIR, "registros_medicamentos.csv")
 USERS_FILE = os.path.join(BASE_DIR, "usuarios.csv")
@@ -28,44 +23,13 @@ os.makedirs(ASSETS_DIR, exist_ok=True)
 logo_path = os.path.join(ASSETS_DIR, "logo_empresa.png")
 if os.path.exists(logo_path):
     st.image(logo_path, width=180)
-
 st.markdown("## 🧾 Control de Estado de Medicamentos")
 
-# ==============================
-# AUTENTICACIÓN GOOGLE DRIVE
-# ==============================
-try:
-    creds_dict = st.secrets["google_credentials"]
-
-    # 🔹 Ajuste de saltos de línea
-    creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n") if "\\n" in creds_dict["private_key"] else creds_dict["private_key"]
-    creds_json_str = json.dumps(creds_dict)
-
-    # Crear archivo temporal de configuración YAML para PyDrive2
-    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".yaml") as f:
-        f.write(f"""
-client_config_backend: service
-service_config:
-  client_json: {creds_json_str}
-save_credentials: False
-""")
-        settings_file = f.name
-
-    gauth = GoogleAuth(settings_file=settings_file)
-    gauth.ServiceAuth()
-    drive = GoogleDrive(gauth)
-    st.success("✅ Conexión exitosa con Google Drive")
-except Exception as e:
-    st.error(f"❌ Error autenticando con Google Drive: {e}")
-    st.stop()
-
-# ==============================
-# CARGAR USUARIOS Y REGISTROS
-# ==============================
+# ---------------- CREAR ARCHIVOS SI NO EXISTEN ----------------
 expected_columns = ["Consecutivo","Usuario", "Estado", "PLU", "Código Genérico",
                     "Nombre Medicamento", "Laboratorio", "Fecha", "Soporte"]
 
-# Registros de medicamentos
+# Cargar registros
 if os.path.exists(DATA_FILE):
     df_registros = pd.read_csv(DATA_FILE)
     for col in expected_columns:
@@ -76,7 +40,7 @@ else:
     df_registros = pd.DataFrame(columns=expected_columns)
     df_registros.to_csv(DATA_FILE, index=False)
 
-# Usuarios
+# Cargar usuarios
 if os.path.exists(USERS_FILE):
     df_usuarios = pd.read_csv(USERS_FILE)
 else:
@@ -87,9 +51,7 @@ df_usuarios["usuario"] = df_usuarios["usuario"].astype(str).str.strip().str.lowe
 df_usuarios["contrasena"] = df_usuarios["contrasena"].astype(str).str.strip()
 df_usuarios["correo"] = df_usuarios.get("correo", pd.Series([""]*len(df_usuarios)))
 
-# ==============================
-# FUNCIONES AUXILIARES
-# ==============================
+# ---------------- FUNCIONES ----------------
 def save_registros(df):
     df.to_csv(DATA_FILE, index=False)
 
@@ -107,12 +69,15 @@ def nombre_valido_archivo(nombre):
     return nombre
 
 def obtener_consecutivo():
-    return int(df_registros["Consecutivo"].max()) + 1 if not df_registros.empty else 1
+    if df_registros.empty:
+        return 1
+    else:
+        return int(df_registros["Consecutivo"].max()) + 1
 
 def mostrar_pdf_en_pestana(soporte_path):
     if os.path.exists(soporte_path):
         st.markdown(f'<a href="file:///{soporte_path}" target="_blank">📄 Abrir PDF</a>', unsafe_allow_html=True)
-        unique_key = f"download_{os.path.basename(soporte_path)}_{int(datetime.now().timestamp()*1000)}"
+        unique_key = f"download_{os.path.basename(soporte_path)}_{int(time.time()*1000)}"
         with open(soporte_path, "rb") as f:
             pdf_data = f.read()
         st.download_button(
@@ -127,9 +92,7 @@ def descargar_csv(df):
     b64 = base64.b64encode(df.to_csv(index=False).encode()).decode()
     st.markdown(f'<a href="data:file/csv;base64,{b64}" download="consolidado_medicamentos.csv">📥 Descargar CSV consolidado</a>', unsafe_allow_html=True)
 
-# ==============================
-# SESIÓN DE USUARIO
-# ==============================
+# ---------------- SESIÓN ----------------
 st.sidebar.header("🔐 Inicio de sesión")
 if "usuario" in st.session_state:
     st.sidebar.success(f"Sesión iniciada: {st.session_state['usuario']}")
@@ -150,7 +113,6 @@ else:
         else:
             st.sidebar.error("Usuario no registrado")
 
-    # Crear usuario
     st.sidebar.markdown("---")
     st.sidebar.markdown("### Crear nuevo usuario")
     nombre_usuario_nuevo = st.sidebar.text_input("Usuario (nombre.apellido)", key="usuario_nuevo").strip().lower()
@@ -174,15 +136,13 @@ else:
             save_usuarios(df_usuarios)
             st.sidebar.success(f"Usuario creado: {nombre_usuario_nuevo}")
 
-# ==============================
-# INTERFAZ PRINCIPAL
-# ==============================
+# ---------------- INTERFAZ ----------------
 if "usuario" in st.session_state:
     usuario = st.session_state["usuario"]
     st.markdown(f"### Hola, **{usuario}**")
     tabs = st.tabs(["Registrar medicamento", "Consolidado general"])
 
-    # ---- TAB REGISTRO ----
+    # -------- TAB REGISTRO --------
     with tabs[0]:
         consecutivo = obtener_consecutivo()
         estado = st.selectbox("Estado", ["Agotado", "Desabastecido", "Descontinuado"], index=0, key="estado")
@@ -206,5 +166,39 @@ if "usuario" in st.session_state:
         col1, col2 = st.columns([1,1])
         if col1.button("💾 Guardar registro"):
             if not nombre.strip():
-                st.warning("Deb
+                st.warning("Debes ingresar el nombre del medicamento")
+            elif "ultimo_pdf_path" not in st.session_state:
+                st.warning("Debes subir un PDF")
+            else:
+                new_row = pd.DataFrame([[consecutivo, usuario, estado, plu, codigo_gen,
+                                         nombre, laboratorio, datetime.now().strftime("%Y-%m-%d"),
+                                         st.session_state["ultimo_pdf_path"]]],
+                                       columns=df_registros.columns)
+                df_registros = pd.concat([df_registros, new_row], ignore_index=True)
+                save_registros(df_registros)
+                st.success("✅ Registro guardado")
+                mostrar_pdf_en_pestana(st.session_state["ultimo_pdf_path"])
+                limpiar_formulario()
 
+        if col2.button("🧹 Limpiar formulario"):
+            limpiar_formulario()
+            st.success("Formulario limpiado ✅")
+
+    # -------- TAB CONSOLIDADO --------
+    with tabs[1]:
+        st.dataframe(
+            df_registros.style.set_table_styles(
+                [{'selector': 'th', 'props': [('text-align', 'center')]},
+                 {'selector': 'td', 'props': [('text-align', 'center')]}]
+            )
+        )
+        descargar_csv(df_registros)
+        for idx, row in df_registros.iterrows():
+            if os.path.exists(row["Soporte"]):
+                st.download_button(
+                    label=f"📥 Descargar {os.path.basename(row['Soporte'])}",
+                    data=open(row["Soporte"], "rb").read(),
+                    file_name=os.path.basename(row["Soporte"]),
+                    mime="application/pdf",
+                    key=f"download_{idx}"
+                )
