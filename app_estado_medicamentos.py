@@ -9,7 +9,7 @@ from PIL import Image
 # ---------------- CONFIG ----------------
 st.set_page_config(page_title="Control de Estado de Medicamentos", page_icon="💊", layout="wide")
 
-# ---------------- RUTAS ----------------
+# Ruta fija en OneDrive
 ONE_DRIVE_DIR = r"C:\Users\lidercompras\OneDrive - pharmaser.com.co\Documentos\Reportes\01_Informes Power BI\01_Analisis de Solicitudes y Ordenes de Compras\Actualiza Informes Phyton\control_estado_medicamentos"
 
 # Crear carpeta base si no existe
@@ -70,7 +70,7 @@ def load_records():
         return pd.read_csv(DATA_FILE, dtype=str)
     else:
         cols = ["fecha_hora", "usuario", "estado", "plu", "codigo_generico",
-                "nombre_comercial", "laboratorio", "presentacion", "observaciones", "soporte", "enlace_soporte"]
+                "nombre_comercial", "laboratorio", "presentacion", "observaciones", "soporte"]
         df = pd.DataFrame(columns=cols)
         df.to_csv(DATA_FILE, index=False)
         return df
@@ -80,22 +80,18 @@ def append_record(record: dict):
     df = pd.concat([df, pd.DataFrame([record])], ignore_index=True)
     df.to_csv(DATA_FILE, index=False)
 
-# ---------------- FUNC: guardar soporte con enlace público ----------------
-def save_support_file(uploaded_file):
-    ts = datetime.now().strftime("%Y%m%d%H%M%S")
-    safe_name = f"{ts}_{uploaded_file.name.replace(' ', '_')}"
-    path = os.path.join(SOPORTES_DIR, safe_name)
+# ---------------- FUNC: guardar soporte con nombre automático ----------------
+def save_support_file(uploaded_file, nombre_medicamento, consecutivo):
+    # Generar nombre automático
+    fecha_str = datetime.now().strftime("%Y%m%d")
+    nombre_safe = nombre_medicamento.strip().replace(" ", "_").upper()
+    extension = os.path.splitext(uploaded_file.name)[1]  # conservar extensión original
+    safe_name = f"{consecutivo:04d}_{fecha_str}_{nombre_safe}{extension}"
 
+    path = os.path.join(SOPORTES_DIR, safe_name)
     with open(path, "wb") as f:
         f.write(uploaded_file.getbuffer())
-
-    # ---------------- Generar enlace público ----------------
-    # Pega aquí el enlace de tu carpeta compartida en OneDrive (CUALQUIERA PUEDE VER)
-    # Ejemplo: "https://1drv.ms/u/s!ABC123Ejemplo?"
-    base_link = "https://1drv.ms/u/s!TuEnlaceBaseDeCarpeta?"
-    enlace_publico = f"{base_link}&file={safe_name}"
-
-    return path, enlace_publico
+    return path
 
 def guess_mime(path):
     mime, _ = mimetypes.guess_type(path)
@@ -201,7 +197,12 @@ def page_registrar():
         if not (plu and nombre and soporte):
             st.error("Debes completar PLU, Nombre y subir el soporte.")
         else:
-            ruta_soporte, enlace_publico = save_support_file(soporte)
+            # Consecutivo automático
+            df_records = load_records()
+            consecutivo = len(df_records) + 1
+
+            ruta_soporte = save_support_file(soporte, nombre, consecutivo)
+
             registro = {
                 "fecha_hora": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "usuario": st.session_state.get("usuario", ""),
@@ -212,12 +213,16 @@ def page_registrar():
                 "laboratorio": laboratorio,
                 "presentacion": presentacion,
                 "observaciones": observaciones,
-                "soporte": os.path.basename(ruta_soporte),
-                "enlace_soporte": enlace_publico
+                "soporte": os.path.basename(ruta_soporte)
             }
             append_record(registro)
             st.success("✅ Registro guardado correctamente.")
-            st.markdown(f"📎 [Abrir soporte PDF]({enlace_publico})", unsafe_allow_html=True)
+
+            # Botón de descarga limpio
+            with open(ruta_soporte, "rb") as f:
+                st.download_button("📥 Descargar", f.read(),
+                                   file_name=os.path.basename(ruta_soporte),
+                                   mime=guess_mime(ruta_soporte))
 
 def page_registros():
     st.title("📂 Registros guardados")
@@ -230,14 +235,16 @@ def page_registros():
                      "nombre_comercial", "laboratorio", "presentacion", "observaciones"]],
                  use_container_width=True)
 
-    st.markdown("### ⬇️ Enlaces públicos de soportes")
+    st.markdown("### ⬇️ Descargas de soportes")
     for idx, row in df.iterrows():
-        enlace = row.get("enlace_soporte", "")
-        nombre_pdf = row.get("soporte", "")
-        if enlace:
-            st.markdown(f"📥 [{nombre_pdf}]({enlace})")
+        soporte_file = os.path.join(SOPORTES_DIR, row.get("soporte", ""))
+        if os.path.exists(soporte_file):
+            with open(soporte_file, "rb") as f:
+                st.download_button("📥 Descargar", f.read(),
+                                   file_name=os.path.basename(soporte_file),
+                                   mime=guess_mime(soporte_file))
         else:
-            st.warning(f"Soporte no disponible para registro {idx}")
+            st.warning(f"Soporte no encontrado para registro {idx}")
 
 def page_gestion_usuarios():
     st.title("👥 Gestión de usuarios")
