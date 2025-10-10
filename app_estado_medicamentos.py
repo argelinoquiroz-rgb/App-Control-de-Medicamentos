@@ -80,21 +80,16 @@ def append_record(record: dict):
     df = pd.concat([df, pd.DataFrame([record])], ignore_index=True)
     df.to_csv(DATA_FILE, index=False)
 
-# ---------------- FUNC: guardar soporte con nombre automático ----------------
-def save_support_file(uploaded_file, nombre_medicamento, consecutivo):
-    # Generar nombre automático
-    fecha_str = datetime.now().strftime("%Y%m%d")
-    nombre_safe = nombre_medicamento.strip().replace(" ", "_").upper()
-    extension = os.path.splitext(uploaded_file.name)[1]  # conservar extensión original
-    safe_name = f"{consecutivo:04d}_{fecha_str}_{nombre_safe}{extension}"
-
+def save_support_file(uploaded_file, plu, nombre):
+    ext = uploaded_file.name.split(".")[-1]
+    safe_name = f"{plu}_{nombre.replace(' ', '_')}.{ext}"
     path = os.path.join(SOPORTES_DIR, safe_name)
     with open(path, "wb") as f:
         f.write(uploaded_file.getbuffer())
-    return path
+    return safe_name  # Guardamos solo el nombre del archivo para no mostrar ruta
 
-def guess_mime(path):
-    mime, _ = mimetypes.guess_type(path)
+def guess_mime(filename):
+    mime, _ = mimetypes.guess_type(filename)
     return mime or "application/octet-stream"
 
 # ---------------- UI: login ----------------
@@ -168,9 +163,9 @@ def page_registrar():
     st.title("➕ Registrar medicamento")
 
     explicaciones_estado = {
-        "Agotado": "🟡 **Agotado:** El medicamento no está disponible temporalmente en el inventario interno, pero sí existe en el mercado y puede ser adquirido nuevamente por el proveedor o distribuidor.",
-        "Desabastecido": "🔴 **Desabastecido:** El medicamento no se encuentra disponible ni en el inventario interno ni en el mercado nacional. Existen dificultades en su producción, importación o distribución.",
-        "Descontinuado": "⚫ **Descontinuado:** El medicamento ha sido retirado del mercado por decisión del fabricante o autoridad sanitaria y no volverá a producirse o comercializarse."
+        "Agotado": "🟡 **Agotado:** Medicamento temporalmente no disponible en inventario interno.",
+        "Desabastecido": "🔴 **Desabastecido:** Medicamento no disponible en inventario interno ni mercado nacional.",
+        "Descontinuado": "⚫ **Descontinuado:** Retirado del mercado por decisión del fabricante o autoridad sanitaria."
     }
 
     estado = st.selectbox("Estado del medicamento", list(explicaciones_estado.keys()))
@@ -197,12 +192,7 @@ def page_registrar():
         if not (plu and nombre and soporte):
             st.error("Debes completar PLU, Nombre y subir el soporte.")
         else:
-            # Consecutivo automático
-            df_records = load_records()
-            consecutivo = len(df_records) + 1
-
-            ruta_soporte = save_support_file(soporte, nombre, consecutivo)
-
+            soporte_file_name = save_support_file(soporte, plu, nombre)
             registro = {
                 "fecha_hora": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "usuario": st.session_state.get("usuario", ""),
@@ -213,16 +203,11 @@ def page_registrar():
                 "laboratorio": laboratorio,
                 "presentacion": presentacion,
                 "observaciones": observaciones,
-                "soporte": os.path.basename(ruta_soporte)
+                "soporte": soporte_file_name
             }
             append_record(registro)
             st.success("✅ Registro guardado correctamente.")
-
-            # Botón de descarga limpio
-            with open(ruta_soporte, "rb") as f:
-                st.download_button("📥 Descargar", f.read(),
-                                   file_name=os.path.basename(ruta_soporte),
-                                   mime=guess_mime(ruta_soporte))
+            st.info(f"Soporte guardado correctamente.")
 
 def page_registros():
     st.title("📂 Registros guardados")
@@ -231,20 +216,38 @@ def page_registros():
         st.info("No hay registros guardados aún.")
         return
 
-    st.dataframe(df[["fecha_hora", "usuario", "estado", "plu", "codigo_generico",
-                     "nombre_comercial", "laboratorio", "presentacion", "observaciones"]],
-                 use_container_width=True)
+    # ---------------- BUSCADOR ----------------
+    st.markdown("### 🔍 Buscar registros")
+    query = st.text_input("Ingresa texto para buscar en cualquier campo")
+    if query:
+        mask = df.apply(lambda row: row.astype(str).str.contains(query, case=False).any(), axis=1)
+        df_filtered = df[mask]
+    else:
+        df_filtered = df
 
-    st.markdown("### ⬇️ Descargas de soportes")
-    for idx, row in df.iterrows():
-        soporte_file = os.path.join(SOPORTES_DIR, row.get("soporte", ""))
-        if os.path.exists(soporte_file):
-            with open(soporte_file, "rb") as f:
-                st.download_button("📥 Descargar", f.read(),
-                                   file_name=os.path.basename(soporte_file),
-                                   mime=guess_mime(soporte_file))
-        else:
-            st.warning(f"Soporte no encontrado para registro {idx}")
+    # ---------------- TABLA ----------------
+    st.markdown("### 📋 Registros")
+    for idx, row in df_filtered.iterrows():
+        col1, col2 = st.columns([8, 2])
+        with col1:
+            st.write(f"**Fecha:** {row['fecha_hora']} | **Usuario:** {row['usuario']} | "
+                     f"**Estado:** {row['estado']} | **PLU:** {row['plu']} | "
+                     f"**Nombre:** {row['nombre_comercial']} | **Laboratorio:** {row['laboratorio']} | "
+                     f"**Presentación:** {row['presentacion']} | **Observaciones:** {row['observaciones']}")
+        with col2:
+            soporte_path = os.path.join(SOPORTES_DIR, row.get("soporte", ""))
+            if os.path.exists(soporte_path):
+                with open(soporte_path, "rb") as f:
+                    st.download_button(
+                        label="📥 Descargar",
+                        data=f.read(),
+                        file_name=os.path.basename(soporte_path),
+                        mime=guess_mime(soporte_path),
+                        key=f"download_{idx}"
+                    )
+            else:
+                st.warning("Soporte no disponible")
+        st.markdown("---")
 
 def page_gestion_usuarios():
     st.title("👥 Gestión de usuarios")
