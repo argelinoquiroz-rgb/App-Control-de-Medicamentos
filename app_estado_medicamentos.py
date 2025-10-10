@@ -8,8 +8,8 @@ from PIL import Image
 # ---------------- CONFIG ----------------
 st.set_page_config(page_title="Control de Estado de Medicamentos", page_icon="💊", layout="wide")
 
-# Ruta fija en OneDrive
-ONE_DRIVE_DIR = r"C:\Users\lidercompras\OneDrive - pharmaser.com.co\Documentos\Reportes\01_Informes Power BI\01_Analisis de Solicitudes y Ordenes de Compras\Actualiza Informes Phyton\control_estado_medicamentos\soportes"
+# Ruta fija en OneDrive (¡AJUSTADA!)
+ONE_DRIVE_DIR = r"C:\Users\lidercompras\OneDrive - pharmaser.com.co\Documentos\Reportes\01_Informes Power BI\01_Analisis de Solicitudes y Ordenes de Compras\Actualiza Informes Phyton\control_estado_medicamentos"
 
 os.makedirs(ONE_DRIVE_DIR, exist_ok=True)
 BASE_DIR = ONE_DRIVE_DIR
@@ -22,6 +22,12 @@ LOGO_PATH = os.path.join(ASSETS_DIR, "logo_empresa.png")
 
 os.makedirs(SOPORTES_DIR, exist_ok=True)
 os.makedirs(ASSETS_DIR, exist_ok=True)
+
+# DEBUG: Mostrar rutas en la app (puedes quitarlo después de comprobar)
+st.write(f"ONE_DRIVE_DIR: {ONE_DRIVE_DIR}")
+st.write(f"SOPORTES_DIR: {SOPORTES_DIR}")
+st.write(f"USERS_FILE: {USERS_FILE}")
+st.write(f"DATA_FILE: {DATA_FILE}")
 
 # ---------------- UTIL ----------------
 def load_users():
@@ -65,6 +71,8 @@ def save_support_file(uploaded_file, consecutivo, nombre):
     ext = os.path.splitext(uploaded_file.name)[1]
     safe_name = f"{consecutivo}_{nombre.replace(' ', '_')}{ext}"
     path = os.path.join(SOPORTES_DIR, safe_name)
+    # DEBUG: Mostrar ruta de guardado en la app
+    st.write(f"Guardando soporte en: {path}")
     with open(path, "wb") as f:
         f.write(uploaded_file.getbuffer())
     return path
@@ -93,7 +101,7 @@ def sidebar_login():
                 st.session_state["usuario"] = usuario.strip().lower()
                 st.session_state["logged_in"] = True
                 st.success("✅ Inicio de sesión correcto.")
-                st.rerun()  # Cambiado de st.experimental_rerun()
+                st.rerun()  # Usar st.rerun() moderno
             else:
                 st.sidebar.error("❌ Usuario o contraseña incorrectos.")
     else:  # Crear usuario
@@ -217,7 +225,7 @@ else:
     if st.sidebar.button("Cerrar sesión"):
         st.session_state["logged_in"] = False
         st.session_state["usuario"] = ""
-        st.rerun()  # Cambiado de st.experimental_rerun()
+        st.rerun()
     seleccion = main_menu()
     if seleccion == "Registrar medicamento":
         page_registrar()
