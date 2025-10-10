@@ -32,15 +32,23 @@ st.markdown("---")
 # ==============================
 st.subheader("📋 Registrar medicamento")
 
-# Campos de registro
+# Campos principales
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    nombre = st.text_input("Nombre del medicamento")
+    plu = st.text_input("🔢 PLU del medicamento")
 with col2:
-    laboratorio = st.text_input("Laboratorio")
+    codigo_generico = st.text_input("🧬 Código genérico")
 with col3:
-    fecha = st.date_input("Fecha de registro", value=datetime.today())
+    fecha = st.date_input("📅 Fecha de registro", value=datetime.today())
+
+col4, col5, col6 = st.columns(3)
+with col4:
+    nombre = st.text_input("💊 Nombre comercial del medicamento")
+with col5:
+    laboratorio = st.text_input("🏭 Laboratorio fabricante")
+with col6:
+    presentacion = st.text_input("📦 Presentación (ej: Tabletas 500mg)")
 
 # -----------------------------
 # Diccionario de estados con explicación
@@ -52,7 +60,7 @@ explicaciones_estado = {
 }
 
 estado = st.selectbox(
-    "Estado",
+    "⚙️ Estado del medicamento",
     options=list(explicaciones_estado.keys()),
     index=0,
     key="estado"
@@ -64,39 +72,46 @@ st.markdown(explicaciones_estado[estado])
 # -----------------------------
 # Observaciones y Soporte
 # -----------------------------
-observaciones = st.text_area("Observaciones")
-archivo = st.file_uploader("Subir soporte (opcional)", type=["pdf", "jpg", "png"])
+observaciones = st.text_area("🗒️ Observaciones o comentarios adicionales")
+archivo = st.file_uploader("📎 Subir soporte (opcional)", type=["pdf", "jpg", "png"])
 
 # -----------------------------
 # Guardar registro
 # -----------------------------
 if st.button("💾 Guardar registro"):
-    # Crear archivo CSV si no existe
-    data_file = "registros_medicamentos.csv"
-    nuevo_registro = {
-        "Fecha": fecha.strftime("%Y-%m-%d"),
-        "Nombre": nombre,
-        "Laboratorio": laboratorio,
-        "Estado": estado,
-        "Observaciones": observaciones
-    }
-
-    if os.path.exists(data_file):
-        df = pd.read_csv(data_file)
-        df = pd.concat([df, pd.DataFrame([nuevo_registro])], ignore_index=True)
+    # Validación mínima
+    if not (plu and nombre):
+        st.error("⚠️ Por favor completa al menos los campos: *PLU* y *Nombre del medicamento*.")
     else:
-        df = pd.DataFrame([nuevo_registro])
+        # Crear archivo CSV si no existe
+        data_file = "registros_medicamentos.csv"
+        nuevo_registro = {
+            "Fecha": fecha.strftime("%Y-%m-%d"),
+            "PLU": plu,
+            "Código Genérico": codigo_generico,
+            "Nombre Comercial": nombre,
+            "Presentación": presentacion,
+            "Laboratorio": laboratorio,
+            "Estado": estado,
+            "Observaciones": observaciones
+        }
 
-    df.to_csv(data_file, index=False, encoding="utf-8-sig")
+        if os.path.exists(data_file):
+            df = pd.read_csv(data_file)
+            df = pd.concat([df, pd.DataFrame([nuevo_registro])], ignore_index=True)
+        else:
+            df = pd.DataFrame([nuevo_registro])
 
-    st.success("✅ Registro guardado correctamente.")
+        df.to_csv(data_file, index=False, encoding="utf-8-sig")
 
-    # Guardar soporte si fue cargado
-    if archivo is not None:
-        soporte_path = os.path.join("soportes", archivo.name)
-        with open(soporte_path, "wb") as f:
-            f.write(archivo.getbuffer())
-        st.info(f"📎 Soporte guardado en: {soporte_path}")
+        st.success("✅ Registro guardado correctamente.")
+
+        # Guardar soporte si fue cargado
+        if archivo is not None:
+            soporte_path = os.path.join("soportes", archivo.name)
+            with open(soporte_path, "wb") as f:
+                f.write(archivo.getbuffer())
+            st.info(f"📎 Soporte guardado en: `{soporte_path}`")
 
 # ==============================
 # VISUALIZAR REGISTROS
