@@ -9,7 +9,7 @@ from PIL import Image
 st.set_page_config(page_title="Control de Estado de Medicamentos", page_icon="💊", layout="wide")
 
 # Ruta fija en OneDrive
-ONE_DRIVE_DIR = r"C:\Users\lidercompras\OneDrive - pharmaser.com.co\Documentos\Reportes\01_Informes Power BI\01_Analisis de Solicitudes y Ordenes de Compras\Actualiza Informes Phyton\control_estado_me[...]"
+ONE_DRIVE_DIR = r"C:\Users\lidercompras\OneDrive - pharmaser.com.co\Documentos\Reportes\01_Informes Power BI\01_Analisis de Solicitudes y Ordenes de Compras\Actualiza Informes Phyton\control_estado_medicamentos\soportes"
 
 os.makedirs(ONE_DRIVE_DIR, exist_ok=True)
 BASE_DIR = ONE_DRIVE_DIR
