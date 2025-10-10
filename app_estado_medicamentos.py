@@ -26,54 +26,60 @@ os.makedirs(ASSETS_DIR, exist_ok=True)
 # ---------------- UTIL ----------------
 def load_users():
     if not os.path.exists(USERS_FILE):
-        pd.DataFrame({"usuario":["admin"],"contrasena":["250382"]}).to_csv(USERS_FILE,index=False)
-    df = pd.read_csv(USERS_FILE,dtype=str)
-    df.columns = [c.strip().lower().replace("ñ","n") for c in df.columns]
+        pd.DataFrame({"usuario": ["admin"], "contrasena": ["250382"]}).to_csv(USERS_FILE, index=False)
+    df = pd.read_csv(USERS_FILE, dtype=str)
+    df.columns = [c.strip().lower().replace("ñ", "n") for c in df.columns]
     df["usuario"] = df["usuario"].astype(str).str.strip().str.lower()
     df["contrasena"] = df["contrasena"].astype(str).str.strip()
-    return df[["usuario","contrasena"]]
+    return df[["usuario", "contrasena"]]
 
-def save_user(username,password):
+def save_user(username, password):
     df = load_users()
     if username.lower().strip() in df["usuario"].values:
-        return False,"Usuario ya existe"
-    new = pd.DataFrame({"usuario":[username.lower().strip()],"contrasena":[password.strip()]})
-    df = pd.concat([df,new], ignore_index=True)
-    df.to_csv(USERS_FILE,index=False)
-    return True,"Usuario creado correctamente ✅"
+        return False, "Usuario ya existe"
+    new = pd.DataFrame({"usuario": [username.lower().strip()], "contrasena": [password.strip()]})
+    df = pd.concat([df, new], ignore_index=True)
+    df.to_csv(USERS_FILE, index=False)
+    return True, "Usuario creado correctamente ✅"
 
 def load_records():
     if os.path.exists(DATA_FILE):
-        df = pd.read_csv(DATA_FILE,dtype=str)
+        df = pd.read_csv(DATA_FILE, dtype=str)
         df.fillna("", inplace=True)
         return df
     else:
-        cols = ["consecutivo","fecha_hora","usuario","estado","plu","codigo_generico",
-                "nombre_comercial","laboratorio","presentacion","observaciones","soporte"]
+        cols = [
+            "consecutivo", "fecha_hora", "usuario", "estado", "plu", "codigo_generico",
+            "nombre_comercial", "laboratorio", "presentacion", "observaciones", "soporte"
+        ]
         df = pd.DataFrame(columns=cols)
-        df.to_csv(DATA_FILE,index=False)
+        df.to_csv(DATA_FILE, index=False)
         return df
 
-def append_record(record:dict):
+def append_record(record: dict):
     df = load_records()
-    df = pd.concat([df,pd.DataFrame([record])], ignore_index=True)
-    df.to_csv(DATA_FILE,index=False)
+    df = pd.concat([df, pd.DataFrame([record])], ignore_index=True)
+    df.to_csv(DATA_FILE, index=False)
 
 def save_support_file(uploaded_file, consecutivo, nombre):
     ext = os.path.splitext(uploaded_file.name)[1]
-    safe_name = f"{consecutivo}_{nombre.replace(' ','_')}{ext}"
+    safe_name = f"{consecutivo}_{nombre.replace(' ', '_')}{ext}"
     path = os.path.join(SOPORTES_DIR, safe_name)
-    with open(path,"wb") as f: f.write(uploaded_file.getbuffer())
+    with open(path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
     return path
 
 def guess_mime(path):
-    mime,_ = mimetypes.guess_type(path)
+    mime, _ = mimetypes.guess_type(path)
     return mime or "application/octet-stream"
 
 # ---------------- SIDEBAR LOGIN/REGISTER ----------------
 def sidebar_login():
-    st.sidebar.image(LOGO_PATH, width=150)
-    st.sidebar.title("💊 Control de Medicamentos")
+    if os.path.exists(LOGO_PATH):
+        st.sidebar.image(LOGO_PATH, width=150)
+    else:
+        st.sidebar.markdown("<h3 style='text-align:center;'>💊</h3>", unsafe_allow_html=True)
+    st.sidebar.title("Control de Medicamentos")
     menu = st.sidebar.radio("Acción", ["Iniciar sesión", "Crear usuario"], horizontal=True)
 
     if menu == "Iniciar sesión":
@@ -81,8 +87,8 @@ def sidebar_login():
         contrasena = st.sidebar.text_input("Contraseña", type="password", key="sidebar_login_contrasena")
         if st.sidebar.button("Iniciar sesión"):
             users = load_users()
-            match = ((users["usuario"]==usuario.strip().lower()) &
-                     (users["contrasena"]==contrasena.strip())).any()
+            match = ((users["usuario"] == usuario.strip().lower()) &
+                     (users["contrasena"] == contrasena.strip())).any()
             if match:
                 st.session_state["usuario"] = usuario.strip().lower()
                 st.session_state["logged_in"] = True
@@ -116,9 +122,9 @@ def page_registrar():
     st.title("➕ Registrar medicamento")
 
     estados = {
-        "Agotado":"🟡 Agotado: No disponible temporalmente en inventario interno.",
-        "Desabastecido":"🔴 Desabastecido: No disponible en inventario ni mercado nacional.",
-        "Descontinuado":"⚫ Descontinuado: Retirado del mercado definitivamente."
+        "Agotado": "🟡 Agotado: No disponible temporalmente en inventario interno.",
+        "Desabastecido": "🔴 Desabastecido: No disponible en inventario ni mercado nacional.",
+        "Descontinuado": "⚫ Descontinuado: Retirado del mercado definitivamente."
     }
 
     estado = st.selectbox("Estado del medicamento", list(estados.keys()))
@@ -127,7 +133,7 @@ def page_registrar():
     fecha_actual = datetime.now().date()
     st.date_input("📅 Fecha de registro", value=fecha_actual, disabled=True)
 
-    col1,col2 = st.columns(2)
+    col1, col2 = st.columns(2)
     with col1:
         plu = st.text_input("🔢 PLU", key="plu_input").strip().upper()
     with col2:
@@ -138,19 +144,19 @@ def page_registrar():
     laboratorio = st.text_input("🏭 Laboratorio", key="lab_input").strip().upper()
     presentacion = st.text_input("📦 Presentación", key="pres_input").strip()
     observaciones = st.text_area("📝 Observaciones", key="obs_input").strip()
-    soporte = st.file_uploader("📎 Subir soporte (OBLIGATORIO) — PDF/JPG/PNG", type=["pdf","jpg","jpeg","png"], key="soporte_input")
+    soporte = st.file_uploader("📎 Subir soporte (OBLIGATORIO) — PDF/JPG/PNG", type=["pdf", "jpg", "jpeg", "png"], key="soporte_input")
 
     if st.button("💾 Guardar registro"):
         if not (plu and nombre and soporte):
             st.error("Debes completar PLU, Nombre y subir el soporte.")
         else:
             df = load_records()
-            consecutivo = len(df)+1
+            consecutivo = len(df) + 1
             ruta_soporte = save_support_file(soporte, consecutivo, nombre)
             registro = {
                 "consecutivo": consecutivo,
                 "fecha_hora": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "usuario": st.session_state.get("usuario",""),
+                "usuario": st.session_state.get("usuario", ""),
                 "estado": estado,
                 "plu": plu,
                 "codigo_generico": codigo_gen,
@@ -182,14 +188,14 @@ def page_registros():
     st.dataframe(display_df, use_container_width=True)
 
     st.markdown("### ⬇️ Descarga de soportes")
-    for idx,row in df_filtered.iterrows():
-        soporte_path = row.get("soporte","")
+    for idx, row in df_filtered.iterrows():
+        soporte_path = row.get("soporte", "")
         if os.path.exists(soporte_path):
             mime = guess_mime(soporte_path)
-            with open(soporte_path,"rb") as f:
+            with open(soporte_path, "rb") as f:
                 data_bytes = f.read()
             st.download_button(
-                label=f"📥 Descargar {row.get('nombre_comercial','')}",
+                label=f"📥 Descargar {row.get('nombre_comercial', '')}",
                 data=data_bytes,
                 file_name=os.path.basename(soporte_path),
                 mime=mime
@@ -208,7 +214,10 @@ if not st.session_state["logged_in"]:
     sidebar_login()
 else:
     st.sidebar.markdown(f"👤 Usuario: **{st.session_state.get('usuario','')}**")
-    st.sidebar.button("Cerrar sesión", on_click=lambda: st.session_state.update({"logged_in":False, "usuario":""}))
+    if st.sidebar.button("Cerrar sesión"):
+        st.session_state["logged_in"] = False
+        st.session_state["usuario"] = ""
+        st.experimental_rerun()
     seleccion = main_menu()
     if seleccion == "Registrar medicamento":
         page_registrar()
