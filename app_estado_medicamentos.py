@@ -4,36 +4,38 @@ import os
 from datetime import datetime
 import mimetypes
 from PIL import Image
+from pydrive2.auth import GoogleAuth
+from pydrive2.drive import GoogleDrive
 
 # ---------------- CONFIG ----------------
 st.set_page_config(page_title="Control de Estado de Medicamentos", page_icon="💊", layout="wide")
 
-# Ruta fija en OneDrive (¡AJUSTADA!)
-ONE_DRIVE_DIR = r"C:\Users\lidercompras\OneDrive - pharmaser.com.co\Documentos\Reportes\01_Informes Power BI\01_Analisis de Solicitudes y Ordenes de Compras\Actualiza Informes Phyton\control_estado_medicamentos"
+# ---------------- GOOGLE DRIVE SETTINGS ----------------
 
-os.makedirs(ONE_DRIVE_DIR, exist_ok=True)
-BASE_DIR = ONE_DRIVE_DIR
+# Debes subir tu archivo credentials.json como un secreto en Streamlit Cloud o ponerlo en el mismo directorio.
+# Obtén el ID de la carpeta de Google Drive donde quieres guardar los archivos:
+# Ve a tu Google Drive, entra a la carpeta y copia el ID de la URL:
+# https://drive.google.com/drive/folders/<AQUI_VA_EL_ID_DE_LA_CARPETA>
+GOOGLE_DRIVE_FOLDER_ID = "TU_FOLDER_ID_AQUI"  # <- Pega aquí el ID de tu carpeta de Drive
 
-USERS_FILE = os.path.join(BASE_DIR, "usuarios.csv")
-DATA_FILE = os.path.join(BASE_DIR, "registros_medicamentos.csv")
-SOPORTES_DIR = os.path.join(BASE_DIR, "soportes")
-ASSETS_DIR = os.path.join(BASE_DIR, "assets")
-LOGO_PATH = os.path.join(ASSETS_DIR, "logo_empresa.png")
-
-os.makedirs(SOPORTES_DIR, exist_ok=True)
-os.makedirs(ASSETS_DIR, exist_ok=True)
-
-# DEBUG: Mostrar rutas en la app (puedes quitarlo después de comprobar)
-st.write(f"ONE_DRIVE_DIR: {ONE_DRIVE_DIR}")
-st.write(f"SOPORTES_DIR: {SOPORTES_DIR}")
-st.write(f"USERS_FILE: {USERS_FILE}")
-st.write(f"DATA_FILE: {DATA_FILE}")
+def authenticate_drive():
+    gauth = GoogleAuth()
+    gauth.LoadCredentialsFile("credentials.json")
+    if not gauth.credentials:
+        gauth.LocalWebserverAuth() # Solo funcionará en local
+    elif gauth.access_token_expired:
+        gauth.Refresh()
+    else:
+        gauth.Authorize()
+    gauth.SaveCredentialsFile("credentials.json")
+    drive = GoogleDrive(gauth)
+    return drive
 
 # ---------------- UTIL ----------------
 def load_users():
-    if not os.path.exists(USERS_FILE):
-        pd.DataFrame({"usuario": ["admin"], "contrasena": ["250382"]}).to_csv(USERS_FILE, index=False)
-    df = pd.read_csv(USERS_FILE, dtype=str)
+    if not os.path.exists("usuarios.csv"):
+        pd.DataFrame({"usuario": ["admin"], "contrasena": ["250382"]}).to_csv("usuarios.csv", index=False)
+    df = pd.read_csv("usuarios.csv", dtype=str)
     df.columns = [c.strip().lower().replace("ñ", "n") for c in df.columns]
     df["usuario"] = df["usuario"].astype(str).str.strip().str.lower()
     df["contrasena"] = df["contrasena"].astype(str).str.strip()
@@ -45,12 +47,12 @@ def save_user(username, password):
         return False, "Usuario ya existe"
     new = pd.DataFrame({"usuario": [username.lower().strip()], "contrasena": [password.strip()]})
     df = pd.concat([df, new], ignore_index=True)
-    df.to_csv(USERS_FILE, index=False)
+    df.to_csv("usuarios.csv", index=False)
     return True, "Usuario creado correctamente ✅"
 
 def load_records():
-    if os.path.exists(DATA_FILE):
-        df = pd.read_csv(DATA_FILE, dtype=str)
+    if os.path.exists("registros_medicamentos.csv"):
+        df = pd.read_csv("registros_medicamentos.csv", dtype=str)
         df.fillna("", inplace=True)
         return df
     else:
@@ -59,23 +61,32 @@ def load_records():
             "nombre_comercial", "laboratorio", "presentacion", "observaciones", "soporte"
         ]
         df = pd.DataFrame(columns=cols)
-        df.to_csv(DATA_FILE, index=False)
+        df.to_csv("registros_medicamentos.csv", index=False)
         return df
 
 def append_record(record: dict):
     df = load_records()
     df = pd.concat([df, pd.DataFrame([record])], ignore_index=True)
-    df.to_csv(DATA_FILE, index=False)
+    df.to_csv("registros_medicamentos.csv", index=False)
 
-def save_support_file(uploaded_file, consecutivo, nombre):
+def save_support_file(uploaded_file, consecutivo, nombre, drive, folder_id):
     ext = os.path.splitext(uploaded_file.name)[1]
     safe_name = f"{consecutivo}_{nombre.replace(' ', '_')}{ext}"
-    path = os.path.join(SOPORTES_DIR, safe_name)
-    # DEBUG: Mostrar ruta de guardado en la app
-    st.write(f"Guardando soporte en: {path}")
-    with open(path, "wb") as f:
+
+    # Guardar temporalmente el archivo
+    temp_path = f"temp_{safe_name}"
+    with open(temp_path, "wb") as f:
         f.write(uploaded_file.getbuffer())
-    return path
+
+    # Subir a Google Drive
+    file_drive = drive.CreateFile({'title': safe_name, "parents": [{"id": folder_id}]})
+    file_drive.SetContentFile(temp_path)
+    file_drive.Upload()
+    file_drive.InsertPermission({'type': 'anyone', 'value': 'anyone', 'role': 'reader'})
+    os.remove(temp_path)  # Borra el archivo local temporal
+
+    download_url = f"https://drive.google.com/uc?id={file_drive['id']}&export=download"
+    return download_url
 
 def guess_mime(path):
     mime, _ = mimetypes.guess_type(path)
@@ -83,10 +94,6 @@ def guess_mime(path):
 
 # ---------------- SIDEBAR LOGIN/REGISTER ----------------
 def sidebar_login():
-    if os.path.exists(LOGO_PATH):
-        st.sidebar.image(LOGO_PATH, width=150)
-    else:
-        st.sidebar.markdown("<h3 style='text-align:center;'>💊</h3>", unsafe_allow_html=True)
     st.sidebar.title("Control de Medicamentos")
     menu = st.sidebar.radio("Acción", ["Iniciar sesión", "Crear usuario"], horizontal=True)
 
@@ -101,7 +108,7 @@ def sidebar_login():
                 st.session_state["usuario"] = usuario.strip().lower()
                 st.session_state["logged_in"] = True
                 st.success("✅ Inicio de sesión correcto.")
-                st.rerun()  # Usar st.rerun() moderno
+                st.rerun()
             else:
                 st.sidebar.error("❌ Usuario o contraseña incorrectos.")
     else:  # Crear usuario
@@ -160,7 +167,11 @@ def page_registrar():
         else:
             df = load_records()
             consecutivo = len(df) + 1
-            ruta_soporte = save_support_file(soporte, consecutivo, nombre)
+
+            # Autenticación y subida a Drive
+            drive = authenticate_drive()
+            ruta_soporte = save_support_file(soporte, consecutivo, nombre, drive, GOOGLE_DRIVE_FOLDER_ID)
+
             registro = {
                 "consecutivo": consecutivo,
                 "fecha_hora": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -197,16 +208,11 @@ def page_registros():
 
     st.markdown("### ⬇️ Descarga de soportes")
     for idx, row in df_filtered.iterrows():
-        soporte_path = row.get("soporte", "")
-        if os.path.exists(soporte_path):
-            mime = guess_mime(soporte_path)
-            with open(soporte_path, "rb") as f:
-                data_bytes = f.read()
-            st.download_button(
-                label=f"📥 Descargar {row.get('nombre_comercial', '')}",
-                data=data_bytes,
-                file_name=os.path.basename(soporte_path),
-                mime=mime
+        soporte_url = row.get("soporte", "")
+        if soporte_url:
+            st.markdown(
+                f"<a href='{soporte_url}' target='_blank'>📥 Descargar {row.get('nombre_comercial', '')}</a>",
+                unsafe_allow_html=True
             )
 
 def page_gestion_usuarios():
