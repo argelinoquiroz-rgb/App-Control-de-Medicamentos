@@ -7,23 +7,21 @@ import mimetypes
 from PIL import Image
 
 # ---------------- CONFIG ----------------
-st.set_page_config(page_title="Control de Estado de Medicamentos", page_icon="💊", layout="wide")
+st.set_page_config(page_title="Control de Estado de Medicamentos",
+                   page_icon="💊", layout="wide")
 
 # Ruta fija en OneDrive
 ONE_DRIVE_DIR = r"C:\Users\lidercompras\OneDrive - pharmaser.com.co\Documentos\Reportes\01_Informes Power BI\01_Analisis de Solicitudes y Ordenes de Compras\Actualiza Informes Phyton\control_estado_medicamentos"
 
-# Crear carpeta base si no existe
 os.makedirs(ONE_DRIVE_DIR, exist_ok=True)
 BASE_DIR = ONE_DRIVE_DIR
 
-# Archivos principales
 USERS_FILE = os.path.join(BASE_DIR, "usuarios.csv")
 DATA_FILE = os.path.join(BASE_DIR, "registros_medicamentos.csv")
 SOPORTES_DIR = os.path.join(BASE_DIR, "soportes")
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 LOGO_PATH = os.path.join(ASSETS_DIR, "logo_empresa.png")
 
-# Crear carpetas necesarias
 os.makedirs(SOPORTES_DIR, exist_ok=True)
 os.makedirs(ASSETS_DIR, exist_ok=True)
 
@@ -69,7 +67,7 @@ def load_records():
     if os.path.exists(DATA_FILE):
         return pd.read_csv(DATA_FILE, dtype=str)
     else:
-        cols = ["fecha_hora", "usuario", "estado", "plu", "codigo_generico",
+        cols = ["consecutivo","fecha_hora", "usuario", "estado", "plu", "codigo_generico",
                 "nombre_comercial", "laboratorio", "presentacion", "observaciones", "soporte"]
         df = pd.DataFrame(columns=cols)
         df.to_csv(DATA_FILE, index=False)
@@ -80,17 +78,13 @@ def append_record(record: dict):
     df = pd.concat([df, pd.DataFrame([record])], ignore_index=True)
     df.to_csv(DATA_FILE, index=False)
 
-# ---------------- UTIL: guardar soporte ----------------
-def save_support_file(uploaded_file, nombre_comercial, plu):
-    df = load_records()
-    consecutivo = len(df) + 1
-    nombre_seguro = nombre_comercial.replace(" ", "_").replace("/", "_").upper()
-    ext = os.path.splitext(uploaded_file.name)[1]
-    file_name = f"{consecutivo}_{plu}_{nombre_seguro}{ext}"
-    path = os.path.join(SOPORTES_DIR, file_name)
+def save_support_file(uploaded_file, consecutivo, plu, nombre):
+    ext = uploaded_file.name.split(".")[-1]
+    safe_name = f"{consecutivo}_{plu}_{nombre.replace(' ','_')}.{ext}"
+    path = os.path.join(SOPORTES_DIR, safe_name)
     with open(path, "wb") as f:
         f.write(uploaded_file.getbuffer())
-    return file_name  # retornamos solo el nombre del archivo
+    return path, safe_name
 
 def guess_mime(path):
     mime, _ = mimetypes.guess_type(path)
@@ -110,7 +104,7 @@ def login_page():
     st.markdown("<h2 style='text-align:center; color:#0D3B66;'>Control de Estado de Medicamentos</h2>", unsafe_allow_html=True)
     st.markdown("</div>")
     st.write("**Inicie sesión** para acceder al sistema.")
-    col1, col2, col3 = st.columns([1, 2, 1])
+    col1, col2, col3 = st.columns([1,2,1])
     with col2:
         usuario_input = st.text_input("Usuario", key="login_usuario")
         contrasena_input = st.text_input("Contraseña", type="password", key="login_contrasena")
@@ -122,7 +116,7 @@ def login_page():
                 st.session_state["usuario"] = usuario_input.strip().lower()
                 st.session_state["logged_in"] = True
                 st.success("✅ Inicio de sesión correcto.")
-                st.rerun()
+                st.experimental_rerun()
             else:
                 st.error("❌ Usuario o contraseña incorrectos.")
 
@@ -130,7 +124,6 @@ def login_page():
 def app_sidebar():
     if os.path.exists(LOGO_PATH):
         st.sidebar.image(LOGO_PATH, width=150)
-
     st.sidebar.markdown(f"**👤 Usuario:** `{st.session_state.get('usuario','')}`")
     st.sidebar.markdown("---")
 
@@ -151,10 +144,9 @@ def app_sidebar():
     menu = st.sidebar.radio("📋 Navegación", ["Inicio", "Registrar medicamento", "Registros guardados", "Gestión de usuarios"])
     st.sidebar.markdown("---")
     if st.sidebar.button("🔒 Cerrar sesión"):
-        for k in ["usuario", "logged_in"]:
-            if k in st.session_state:
-                del st.session_state[k]
-        st.rerun()
+        for k in ["usuario","logged_in"]:
+            if k in st.session_state: del st.session_state[k]
+        st.experimental_rerun()
 
     return menu
 
@@ -162,18 +154,14 @@ def app_sidebar():
 def page_inicio():
     st.title("🏠 Inicio")
     st.info("Bienvenido al sistema de control de estado de medicamentos. Usa el menú lateral para navegar.")
-    st.write("📂 Ruta base usada para archivos:")
-    st.code(BASE_DIR)
 
 def page_registrar():
     st.title("➕ Registrar medicamento")
-
     explicaciones_estado = {
-        "Agotado": "🟡 **Agotado:** El medicamento no está disponible temporalmente en el inventario interno, pero sí existe en el mercado y puede ser adquirido nuevamente por el proveedor o distribuidor.",
-        "Desabastecido": "🔴 **Desabastecido:** El medicamento no se encuentra disponible ni en el inventario interno ni en el mercado nacional. Existen dificultades en su producción, importación o distribución.",
-        "Descontinuado": "⚫ **Descontinuado:** El medicamento ha sido retirado del mercado por decisión del fabricante o autoridad sanitaria y no volverá a producirse o comercializarse."
+        "Agotado": "🟡 **Agotado:** No disponible temporalmente en inventario interno.",
+        "Desabastecido": "🔴 **Desabastecido:** No disponible ni en inventario interno ni mercado nacional.",
+        "Descontinuado": "⚫ **Descontinuado:** Retirado del mercado por el fabricante o autoridad sanitaria."
     }
-
     estado = st.selectbox("Estado del medicamento", list(explicaciones_estado.keys()))
     st.info(explicaciones_estado[estado])
 
@@ -192,80 +180,15 @@ def page_registrar():
     presentacion = st.text_input("📦 Presentación", key="pres_input").strip()
     observaciones = st.text_area("📝 Observaciones", key="obs_input").strip()
 
-    soporte = st.file_uploader("📎 Subir soporte (OBLIGATORIO) — PDF/JPG/PNG", type=["pdf", "jpg", "jpeg", "png"], key="soporte_input")
+    soporte = st.file_uploader("📎 Subir soporte (OBLIGATORIO) — PDF/JPG/PNG", type=["pdf","jpg","jpeg","png"], key="soporte_input")
 
     if st.button("💾 Guardar registro"):
         if not (plu and nombre and soporte):
             st.error("Debes completar PLU, Nombre y subir el soporte.")
         else:
-            safe_file_name = save_support_file(soporte, nombre, plu)
+            df = load_records()
+            consecutivo = len(df)+1
+            ruta_soporte, nombre_soporte = save_support_file(soporte, consecutivo, plu, nombre)
             registro = {
-                "fecha_hora": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "usuario": st.session_state.get("usuario", ""),
-                "estado": estado,
-                "plu": plu,
-                "codigo_generico": codigo_gen,
-                "nombre_comercial": nombre,
-                "laboratorio": laboratorio,
-                "presentacion": presentacion,
-                "observaciones": observaciones,
-                "soporte": safe_file_name
-            }
-            append_record(registro)
-            st.success("✅ Registro guardado correctamente.")
-            st.info(f"Soporte guardado: `{safe_file_name}`")
-
-def page_registros():
-    st.title("📂 Registros guardados")
-    df = load_records()
-    if df.empty:
-        st.info("No hay registros guardados aún.")
-        return
-
-    # Buscador global
-    search = st.text_input("🔍 Buscar registro por cualquier campo")
-    if search:
-        df = df[df.apply(lambda row: row.astype(str).str.contains(search, case=False).any(), axis=1)]
-
-    # Mostrar tabla
-    display_df = df.copy()
-    display_df["Soporte"] = display_df["soporte"]
-    st.dataframe(display_df[["fecha_hora", "usuario", "estado", "plu", "codigo_generico",
-                             "nombre_comercial", "laboratorio", "presentacion", "observaciones", "Soporte"]],
-                 use_container_width=True)
-
-    # Botones de descarga
-    st.markdown("### ⬇️ Descargas de soportes")
-    for idx, row in df.iterrows():
-        soporte_file = row.get("soporte", "")
-        soporte_path = os.path.join(SOPORTES_DIR, soporte_file)
-        if os.path.exists(soporte_path):
-            mime = guess_mime(soporte_path)
-            label = f"📥 Descargar"
-            with open(soporte_path, "rb") as f:
-                data_bytes = f.read()
-            st.download_button(label=label, data=data_bytes, file_name=soporte_file, mime=mime)
-        else:
-            st.warning(f"Soporte no encontrado para registro {idx}")
-
-def page_gestion_usuarios():
-    st.title("👥 Gestión de usuarios")
-    users_df = load_users()
-    st.dataframe(users_df, use_container_width=True)
-
-# ---------------- FLOW ----------------
-if "logged_in" not in st.session_state:
-    st.session_state["logged_in"] = False
-
-if not st.session_state["logged_in"]:
-    login_page()
-else:
-    menu = app_sidebar()
-    if menu == "Inicio":
-        page_inicio()
-    elif menu == "Registrar medicamento":
-        page_registrar()
-    elif menu == "Registros guardados":
-        page_registros()
-    elif menu == "Gestión de usuarios":
-        page_gestion_usuarios()
+                "consecutivo": consecutivo,
+                "
