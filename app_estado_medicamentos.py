@@ -2,195 +2,176 @@ import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime
+from io import BytesIO
+import base64
 
 # ==============================
 # CONFIGURACIÓN INICIAL
 # ==============================
-st.set_page_config(page_title="Control de Estado de Medicamentos", layout="wide")
+st.set_page_config(
+    page_title="Control de Estado de Medicamentos",
+    page_icon="💊",
+    layout="wide"
+)
 
+# Crear carpetas necesarias
 os.makedirs("soportes", exist_ok=True)
 os.makedirs("assets", exist_ok=True)
+
+# ==============================
+# BASE DE DATOS LOCAL
+# ==============================
 DATA_FILE = "registros_medicamentos.csv"
+USERS_FILE = "usuarios.csv"
 
 # ==============================
 # FUNCIONES AUXILIARES
 # ==============================
+def cargar_usuarios():
+    if os.path.exists(USERS_FILE):
+        return pd.read_csv(USERS_FILE)
+    else:
+        return pd.DataFrame(columns=["usuario", "contraseña"])
+
+def guardar_usuario(usuario, contraseña):
+    df = cargar_usuarios()
+    if usuario in df["usuario"].values:
+        st.warning("⚠️ El usuario ya existe.")
+    else:
+        nuevo = pd.DataFrame([[usuario, contraseña]], columns=["usuario", "contraseña"])
+        df = pd.concat([df, nuevo], ignore_index=True)
+        df.to_csv(USERS_FILE, index=False)
+        st.success("✅ Usuario creado exitosamente.")
+
 def cargar_datos():
     if os.path.exists(DATA_FILE):
         return pd.read_csv(DATA_FILE)
     else:
-        return pd.DataFrame(columns=["Fecha", "Estado", "Nombre", "PLU", "Código Genérico", "Soporte"])
+        return pd.DataFrame(columns=["Fecha", "PLU", "Código Genérico", "Nombre", "Estado", "Observaciones", "Soporte"])
 
-def guardar_datos(df):
-    df.to_csv(DATA_FILE, index=False, encoding="utf-8-sig")
+def guardar_registro(data):
+    df = cargar_datos()
+    df = pd.concat([df, pd.DataFrame([data])], ignore_index=True)
+    df.to_csv(DATA_FILE, index=False)
 
-def guardar_soporte(archivo):
-    if archivo is not None:
-        file_path = os.path.join("soportes", archivo.name)
-        with open(file_path, "wb") as f:
-            f.write(archivo.getbuffer())
-        return file_path
-    return None
-
-# ==============================
-# ESTILO VISUAL
-# ==============================
-st.markdown("""
-    <style>
-    .main-title {
-        text-align: center;
-        color: #1B263B;
-        font-size: 34px;
-        font-weight: 700;
-        margin-top: 30px;
-        margin-bottom: 10px;
-    }
-    .sub-title {
-        color: #0D1B2A;
-        font-size: 20px;
-        font-weight: 600;
-        margin-top: 20px;
-        border-left: 4px solid #1B263B;
-        padding-left: 10px;
-    }
-    .block {
-        background-color: #F8F9FA;
-        padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 0 10px rgba(0,0,0,0.05);
-        margin-bottom: 25px;
-    }
-    </style>
-""", unsafe_allow_html=True)
+def descargar_soporte(ruta):
+    with open(ruta, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode()
+    href = f'<a href="data:file/octet-stream;base64,{b64}" download="{os.path.basename(ruta)}">📄 Descargar Soporte</a>'
+    return href
 
 # ==============================
-# SESIÓN DE USUARIO
+# LOGIN
 # ==============================
-if "logged_in" not in st.session_state:
-    st.session_state["logged_in"] = False
-
-# ==============================
-# LOGIN PAGE
-# ==============================
-if not st.session_state["logged_in"]:
-    st.markdown("<div class='main-title'>💊 Control de Estado de Medicamentos</div>", unsafe_allow_html=True)
-    st.markdown("#### 🔐 Inicia sesión para continuar")
-
-    col1, col2 = st.columns([1,1])
-    with col1:
-        usuario = st.text_input("Usuario")
-    with col2:
-        contraseña = st.text_input("Contraseña", type="password")
-
-    if st.button("Iniciar sesión"):
-        if usuario == "admin" and contraseña == "123":
-            st.session_state["logged_in"] = True
+def login():
+    st.markdown("## 🔐 Inicio de Sesión")
+    usuario = st.text_input("Usuario")
+    contraseña = st.text_input("Contraseña", type="password")
+    if st.button("Ingresar"):
+        usuarios = cargar_usuarios()
+        if ((usuarios["usuario"] == usuario) & (usuarios["contraseña"] == contraseña)).any():
+            st.session_state["autenticado"] = True
             st.session_state["usuario"] = usuario
-            st.success("✅ Inicio de sesión exitoso.")
-            st.experimental_rerun()
+            st.success("Inicio de sesión exitoso ✅")
+            st.rerun()
         else:
-            st.error("❌ Usuario o contraseña incorrectos.")
+            st.error("❌ Usuario o contraseña incorrectos")
 
 # ==============================
-# INTERFAZ PRINCIPAL (DESPUÉS DE LOGEARSE)
+# INTERFAZ PRINCIPAL
 # ==============================
-else:
-    st.markdown(f"<div class='main-title'>💊 Sistema de Control de Estado de Medicamentos</div>", unsafe_allow_html=True)
-    st.markdown(f"👋 Bienvenido, **{st.session_state['usuario']}**")
+def app_principal():
+    st.sidebar.markdown("### 💊 Control de Estado de Medicamentos")
+    menu = st.sidebar.radio(
+        "Navegación",
+        ["Inicio", "Registrar Medicamento", "Registros Guardados", "Gestión de Usuarios"]
+    )
 
-    tabs = st.tabs(["💊 Registrar medicamento", "📋 Registros guardados", "➕ Crear usuario"])
+    if menu == "Inicio":
+        st.markdown("## 📋 Bienvenido al Sistema de Control de Medicamentos")
+        st.write("Seleccione una opción en el panel lateral para comenzar.")
 
-    # ==============================
-    # 1️⃣ REGISTRAR MEDICAMENTO
-    # ==============================
-    with tabs[0]:
-        st.markdown("<div class='sub-title'>Estado del medicamento</div>", unsafe_allow_html=True)
+    elif menu == "Registrar Medicamento":
+        st.markdown("## 🧾 Registrar Nuevo Medicamento")
 
         explicaciones_estado = {
-            "Agotado": "El medicamento no está disponible temporalmente en el inventario interno, pero sí existe en el mercado y puede ser adquirido nuevamente.",
-            "Desabastecido": "El medicamento no se encuentra disponible ni en el inventario interno ni en el mercado nacional.",
-            "Descontinuado": "El medicamento ha sido retirado del mercado por decisión del fabricante o autoridad sanitaria."
+            "Agotado": "El medicamento no está disponible temporalmente en el inventario interno, pero sí existe en el mercado.",
+            "Desabastecido": "No se encuentra disponible ni en el inventario interno ni en el mercado nacional.",
+            "Descontinuado": "Ha sido retirado del mercado por decisión del fabricante o autoridad sanitaria."
         }
 
-        estado = st.selectbox("Selecciona el estado", list(explicaciones_estado.keys()))
+        estado = st.selectbox("Estado", list(explicaciones_estado.keys()))
         st.info(explicaciones_estado[estado])
 
-        st.markdown("<div class='sub-title'>Datos del medicamento</div>", unsafe_allow_html=True)
+        plu = st.text_input("PLU")
+        nombre = st.text_input("Nombre del Medicamento")
+        observaciones = st.text_area("Observaciones")
+        soporte = st.file_uploader("Subir soporte (obligatorio)", type=["pdf", "jpg", "png"])
 
-        fecha = datetime.today().strftime("%Y-%m-%d")
-        st.text_input("📅 Fecha de registro", value=fecha, disabled=True)
+        # Fecha del día (no editable)
+        fecha_actual = datetime.now().strftime("%Y-%m-%d")
+        st.write(f"📅 Fecha del registro: **{fecha_actual}**")
 
-        col1, col2 = st.columns(2)
-        with col1:
-            nombre = st.text_input("💊 Nombre del medicamento")
-            plu = st.text_input("🔢 PLU (Ejemplo: 12345_ABC)")
-        with col2:
-            codigo_generico = ""
-            if "_" in plu:
-                codigo_generico = plu.split("_")[0]
-            codigo_generico = st.text_input("🧬 Código Genérico", value=codigo_generico, disabled=True)
+        # Código genérico automático
+        codigo_generico = ""
+        if "_" in plu:
+            codigo_generico = plu.split("_")[0]
+        st.text_input("Código Genérico", value=codigo_generico, disabled=True)
 
-        soporte = st.file_uploader("📎 Subir soporte (obligatorio)", type=["pdf", "jpg", "png"])
-
-        if st.button("💾 Guardar registro"):
+        if st.button("Guardar Registro"):
             if not soporte:
-                st.error("❌ Debes subir un soporte antes de guardar.")
-            elif not nombre or not plu:
-                st.warning("⚠️ Por favor completa todos los campos requeridos.")
+                st.error("❌ Debes subir un archivo de soporte antes de guardar.")
             else:
-                file_path = guardar_soporte(soporte)
-                df = cargar_datos()
-                nuevo = pd.DataFrame([{
-                    "Fecha": fecha,
-                    "Estado": estado,
-                    "Nombre": nombre,
+                ruta_soporte = os.path.join("soportes", soporte.name)
+                with open(ruta_soporte, "wb") as f:
+                    f.write(soporte.getbuffer())
+
+                data = {
+                    "Fecha": fecha_actual,
                     "PLU": plu,
                     "Código Genérico": codigo_generico,
-                    "Soporte": file_path
-                }])
-                df = pd.concat([df, nuevo], ignore_index=True)
-                guardar_datos(df)
+                    "Nombre": nombre,
+                    "Estado": estado,
+                    "Observaciones": observaciones,
+                    "Soporte": ruta_soporte
+                }
+                guardar_registro(data)
                 st.success("✅ Registro guardado correctamente.")
 
-    # ==============================
-    # 2️⃣ REGISTROS GUARDADOS
-    # ==============================
-    with tabs[1]:
-        st.markdown("<div class='sub-title'>Registros Guardados</div>", unsafe_allow_html=True)
-
+    elif menu == "Registros Guardados":
+        st.markdown("## 📚 Registros Guardados")
         df = cargar_datos()
         if df.empty:
-            st.warning("⚠️ No hay registros guardados.")
+            st.info("No hay registros guardados aún.")
         else:
-            st.dataframe(df, use_container_width=True)
-            for _, row in df.iterrows():
-                if pd.notna(row["Soporte"]) and os.path.exists(row["Soporte"]):
-                    with open(row["Soporte"], "rb") as f:
-                        st.download_button(
-                            label=f"📥 Descargar soporte de {row['Nombre']}",
-                            data=f,
-                            file_name=os.path.basename(row["Soporte"]),
-                            mime="application/octet-stream"
-                        )
+            for i, row in df.iterrows():
+                st.markdown(f"""
+                **Fecha:** {row['Fecha']}  
+                **PLU:** {row['PLU']}  
+                **Código Genérico:** {row['Código Genérico']}  
+                **Nombre:** {row['Nombre']}  
+                **Estado:** {row['Estado']}  
+                **Observaciones:** {row['Observaciones']}  
+                {descargar_soporte(row['Soporte'])}
+                """)
+                st.markdown("---")
 
-    # ==============================
-    # 3️⃣ CREAR USUARIO
-    # ==============================
-    with tabs[2]:
-        st.markdown("<div class='sub-title'>Crear Nuevo Usuario</div>", unsafe_allow_html=True)
-
-        nuevo_usuario = st.text_input("👤 Nombre de usuario")
-        nueva_contraseña = st.text_input("🔑 Contraseña", type="password")
-
+    elif menu == "Gestión de Usuarios":
+        st.markdown("## 👤 Gestión de Usuarios")
+        st.subheader("Crear nuevo usuario")
+        nuevo_usuario = st.text_input("Nuevo usuario")
+        nueva_contraseña = st.text_input("Contraseña", type="password")
         if st.button("Crear usuario"):
-            if nuevo_usuario and nueva_contraseña:
-                st.success(f"✅ Usuario '{nuevo_usuario}' creado correctamente.")
-            else:
-                st.warning("⚠️ Completa todos los campos para crear un usuario.")
+            guardar_usuario(nuevo_usuario, nueva_contraseña)
 
-    # ==============================
-    # BOTÓN DE CIERRE DE SESIÓN
-    # ==============================
-    if st.sidebar.button("🚪 Cerrar sesión"):
-        st.session_state.clear()
-        st.experimental_rerun()
+# ==============================
+# EJECUCIÓN
+# ==============================
+if "autenticado" not in st.session_state:
+    st.session_state["autenticado"] = False
+
+if not st.session_state["autenticado"]:
+    login()
+else:
+    app_principal()
+
