@@ -10,6 +10,7 @@ import json
 
 # ---------------------- SECRETS TO FILE FOR GOOGLE DRIVE AUTH (for Streamlit Cloud) ----------------------
 if "service_account" in st.secrets:
+    # Convertir a dict y guardar como JSON plano
     creds = dict(st.secrets["service_account"])
     with open("credentials.json", "w") as f:
         json.dump(creds, f)
@@ -23,7 +24,9 @@ GOOGLE_DRIVE_FOLDER_ID = "1itzZF2zLNLmGEDm-ok8FD_rhadaIUM_Z"  # <--- tu carpeta 
 # ---------------- GOOGLE DRIVE AUTH ----------------
 def authenticate_drive():
     gauth = GoogleAuth()
-    gauth.settings["service_config_filepath"] = "credentials.json"
+    # Forzar a PyDrive2 a usar el archivo de cuenta de servicio generado arriba
+    gauth.settings['client_config_backend'] = 'service'
+    gauth.settings['service_config_filepath'] = "credentials.json"
     gauth.ServiceAuth()
     drive = GoogleDrive(gauth)
     return drive
