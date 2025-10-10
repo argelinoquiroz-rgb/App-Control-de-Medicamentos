@@ -11,18 +11,17 @@ from pydrive2.drive import GoogleDrive
 st.set_page_config(page_title="Control de Estado de Medicamentos", page_icon="💊", layout="wide")
 
 # ---------------- GOOGLE DRIVE SETTINGS ----------------
+# ID de la carpeta de Google Drive donde se guardarán los soportes
+GOOGLE_DRIVE_FOLDER_ID = "1itzZF2zLNLmGEDm-ok8FD_rhadaIUM_Z"  # <--- tu carpeta
 
-# Debes subir tu archivo credentials.json como un secreto en Streamlit Cloud o ponerlo en el mismo directorio.
-# Obtén el ID de la carpeta de Google Drive donde quieres guardar los archivos:
-# Ve a tu Google Drive, entra a la carpeta y copia el ID de la URL:
-# https://drive.google.com/drive/folders/<AQUI_VA_EL_ID_DE_LA_CARPETA>
-GOOGLE_DRIVE_FOLDER_ID = "TU_FOLDER_ID_AQUI"  # <- Pega aquí el ID de tu carpeta de Drive
-
+# ---------------- GOOGLE DRIVE AUTH ----------------
 def authenticate_drive():
     gauth = GoogleAuth()
+    # Si usas en local, asegúrate de tener credentials.json en el directorio raíz
+    # Si usas en Streamlit Cloud, deberás cargarlo como secreto y escribirlo a disco temporal
     gauth.LoadCredentialsFile("credentials.json")
     if not gauth.credentials:
-        gauth.LocalWebserverAuth() # Solo funcionará en local
+        gauth.LocalWebserverAuth()
     elif gauth.access_token_expired:
         gauth.Refresh()
     else:
