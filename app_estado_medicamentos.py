@@ -31,16 +31,15 @@ if not os.path.exists(USERS_FILE):
 else:
     df_usuarios = pd.read_csv(USERS_FILE)
 
-# Asegurar limpieza
 df_usuarios["usuario"] = df_usuarios["usuario"].astype(str).str.strip().str.lower()
 df_usuarios["contrasena"] = df_usuarios["contrasena"].astype(str).str.strip()
 
 # ==============================
-# PANEL LATERAL: LOGIN Y CREACIÓN DE USUARIO
+# PANEL LATERAL
 # ==============================
 st.sidebar.header("💊 Control de acceso")
 
-# ---- EXPANDER LOGIN ----
+# ---- LOGIN ----
 with st.sidebar.expander("🔐 Iniciar sesión", expanded=True):
     if "usuario" in st.session_state:
         st.success(f"Sesión activa: {st.session_state['usuario']}")
@@ -63,7 +62,7 @@ with st.sidebar.expander("🔐 Iniciar sesión", expanded=True):
             else:
                 st.error("❌ Usuario no registrado")
 
-# ---- EXPANDER CREAR USUARIO ----
+# ---- CREAR USUARIO ----
 with st.sidebar.expander("👥 Crear nuevo usuario"):
     nuevo_usuario = st.text_input("Nuevo usuario (nombre.apellido)").strip().lower()
     nuevo_correo = st.text_input("Correo electrónico").strip().lower()
@@ -86,7 +85,7 @@ with st.sidebar.expander("👥 Crear nuevo usuario"):
             st.success("✅ Usuario creado correctamente.")
 
 # ==============================
-# INTERFAZ PRINCIPAL (DESPUÉS DEL LOGIN)
+# INTERFAZ PRINCIPAL
 # ==============================
 if "usuario" in st.session_state:
     usuario = st.session_state["usuario"]
@@ -118,22 +117,26 @@ if "usuario" in st.session_state:
         st.markdown(explicaciones_estado[estado])
         st.markdown("---")
 
-        col1, col2, col3 = st.columns(3)
+        # Fecha automática
+        fecha_actual = datetime.now().strftime("%Y-%m-%d")
+        st.text_input("📅 Fecha de registro (automática)", value=fecha_actual, disabled=True)
+
+        # PLU y Código Genérico con autollenado
+        col1, col2 = st.columns(2)
         with col1:
-            plu = st.text_input("🔢 PLU del medicamento").upper()
+            plu = st.text_input("🔢 PLU del medicamento", key="plu").upper()
         with col2:
-            codigo_generico = st.text_input("🧬 Código genérico").upper()
-        with col3:
-            fecha = st.date_input("📅 Fecha de registro", value=datetime.today())
+            # Extraer automáticamente el código genérico si el PLU tiene "_"
+            if "_" in plu:
+                codigo_generico = plu.split("_")[0]
+            else:
+                codigo_generico = ""
+            st.text_input("🧬 Código genérico", value=codigo_generico, key="codigo_generico", disabled=True)
 
-        col4, col5, col6 = st.columns(3)
-        with col4:
-            nombre = st.text_input("💊 Nombre comercial del medicamento").upper()
-        with col5:
-            laboratorio = st.text_input("🏭 Laboratorio fabricante").upper()
-        with col6:
-            presentacion = st.text_input("📦 Presentación (ej: Tabletas 500mg)").upper()
-
+        # Resto de los campos
+        nombre = st.text_input("💊 Nombre comercial del medicamento").upper()
+        laboratorio = st.text_input("🏭 Laboratorio fabricante").upper()
+        presentacion = st.text_input("📦 Presentación (ej: Tabletas 500mg)").upper()
         observaciones = st.text_area("🗒️ Observaciones o comentarios adicionales")
         archivo = st.file_uploader("📎 Subir soporte (OBLIGATORIO)", type=["pdf", "jpg", "png"])
 
@@ -147,7 +150,7 @@ if "usuario" in st.session_state:
 
                 nuevo_registro = {
                     "Usuario": usuario,
-                    "Fecha": fecha.strftime("%Y-%m-%d"),
+                    "Fecha": fecha_actual,
                     "Estado": estado,
                     "PLU": plu,
                     "Código Genérico": codigo_generico,
