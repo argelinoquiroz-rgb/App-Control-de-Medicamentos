@@ -6,27 +6,23 @@ import mimetypes
 from PIL import Image
 from pydrive2.auth import GoogleAuth
 from pydrive2.drive import GoogleDrive
+import json
+
+# ---------------------- SECRETS TO FILE FOR GOOGLE DRIVE AUTH (for Streamlit Cloud) ----------------------
+if "service_account" in st.secrets:
+    with open("credentials.json", "w") as f:
+        json.dump(st.secrets["service_account"], f)
 
 # ---------------- CONFIG ----------------
 st.set_page_config(page_title="Control de Estado de Medicamentos", page_icon="💊", layout="wide")
 
 # ---------------- GOOGLE DRIVE SETTINGS ----------------
-# ID de la carpeta de Google Drive donde se guardarán los soportes
-GOOGLE_DRIVE_FOLDER_ID = "1itzZF2zLNLmGEDm-ok8FD_rhadaIUM_Z"  # <--- tu carpeta
+GOOGLE_DRIVE_FOLDER_ID = "1itzZF2zLNLmGEDm-ok8FD_rhadaIUM_Z"  # <--- tu carpeta de Google Drive
 
 # ---------------- GOOGLE DRIVE AUTH ----------------
 def authenticate_drive():
     gauth = GoogleAuth()
-    # Si usas en local, asegúrate de tener credentials.json en el directorio raíz
-    # Si usas en Streamlit Cloud, deberás cargarlo como secreto y escribirlo a disco temporal
-    gauth.LoadCredentialsFile("credentials.json")
-    if not gauth.credentials:
-        gauth.LocalWebserverAuth()
-    elif gauth.access_token_expired:
-        gauth.Refresh()
-    else:
-        gauth.Authorize()
-    gauth.SaveCredentialsFile("credentials.json")
+    gauth.ServiceAuth()  # Usar la cuenta de servicio de credentials.json
     drive = GoogleDrive(gauth)
     return drive
 
@@ -167,7 +163,6 @@ def page_registrar():
             df = load_records()
             consecutivo = len(df) + 1
 
-            # Autenticación y subida a Drive
             drive = authenticate_drive()
             ruta_soporte = save_support_file(soporte, consecutivo, nombre, drive, GOOGLE_DRIVE_FOLDER_ID)
 
