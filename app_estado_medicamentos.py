@@ -34,7 +34,6 @@ st.markdown("## 🧾 Control de Estado de Medicamentos")
 expected_columns = ["Consecutivo","Usuario", "Estado", "PLU", "Código Genérico",
                     "Nombre Medicamento", "Laboratorio", "Fecha", "Soporte"]
 
-# Cargar registros
 if os.path.exists(DATA_FILE):
     df_registros = pd.read_csv(DATA_FILE)
     for col in expected_columns:
@@ -45,7 +44,6 @@ else:
     df_registros = pd.DataFrame(columns=expected_columns)
     df_registros.to_csv(DATA_FILE, index=False)
 
-# Cargar usuarios
 if os.path.exists(USERS_FILE):
     df_usuarios = pd.read_csv(USERS_FILE)
 else:
@@ -67,6 +65,7 @@ def limpiar_formulario():
     for key in ["estado","plu","codigo_generico","nombre_medicamento","laboratorio","soporte_file","ultimo_pdf_path"]:
         if key in st.session_state:
             del st.session_state[key]
+    st.session_state.guardado = False  # reinicia el control del botón
 
 def nombre_valido_archivo(nombre):
     nombre = nombre.upper().replace(' ', '_')
@@ -112,6 +111,7 @@ else:
             stored_pass = df_usuarios.loc[df_usuarios["usuario"] == usuario_input, "contrasena"].values[0]
             if contrasena_input == stored_pass:
                 st.session_state["usuario"] = usuario_input
+                st.session_state.guardado = False
                 st.success(f"Bienvenido {usuario_input}")
             else:
                 st.sidebar.error("Contraseña incorrecta")
@@ -170,7 +170,9 @@ if "usuario" in st.session_state:
 
         col1, col2 = st.columns([1,1])
         if col1.button("💾 Guardar registro"):
-            if not nombre.strip():
+            if st.session_state.get("guardado", False):
+                st.warning("⚠️ El registro ya fue guardado. Recarga el formulario para agregar otro.")
+            elif not nombre.strip():
                 st.warning("Debes ingresar el nombre del medicamento")
             elif "ultimo_pdf_path" not in st.session_state:
                 st.warning("Debes subir un PDF")
@@ -183,8 +185,9 @@ if "usuario" in st.session_state:
                 df_registros = pd.concat([df_registros, new_row], ignore_index=True)
                 save_registros(df_registros)
                 st.success("✅ Registro guardado localmente")
-                
-                # Subir a Google Drive
+                st.session_state.guardado = True
+
+                # Subir a Google Drive (corregido)
                 try:
                     creds_dict = json.loads(st.secrets["google"]["service_account_file"])
                     with tempfile.NamedTemporaryFile(delete=False, mode="w", suffix=".json") as tmpfile:
@@ -192,12 +195,15 @@ if "usuario" in st.session_state:
                         SERVICE_FILE = tmpfile.name
 
                     gauth = GoogleAuth()
-                    gauth.ServiceAuth(SERVICE_FILE)
+                    gauth.LoadServiceConfigFile(SERVICE_FILE)
+                    gauth.ServiceAuth()  # ← CORRECTO: sin argumentos
                     drive = GoogleDrive(gauth)
 
                     carpeta_drive_id = st.secrets["google"]["carpeta_drive_id"]
-                    gfile = drive.CreateFile({'title': os.path.basename(st.session_state["ultimo_pdf_path"]),
-                                              'parents':[{'id': carpeta_drive_id}]})
+                    gfile = drive.CreateFile({
+                        'title': os.path.basename(st.session_state["ultimo_pdf_path"]),
+                        'parents':[{'id': carpeta_drive_id}]
+                    })
                     gfile.SetContentFile(st.session_state["ultimo_pdf_path"])
                     gfile.Upload()
                     st.success(f"✅ Archivo subido a Drive: {gfile['title']}")
@@ -211,3 +217,4 @@ if "usuario" in st.session_state:
         st.markdown("### 📊 Consolidado de registros")
         st.dataframe(df_registros)
         descargar_csv(df_registros)
+
