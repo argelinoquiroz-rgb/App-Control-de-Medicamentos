@@ -23,7 +23,8 @@ GOOGLE_DRIVE_FOLDER_ID = "1itzZF2zLNLmGEDm-ok8FD_rhadaIUM_Z"  # <--- tu carpeta 
 # ---------------- GOOGLE DRIVE AUTH ----------------
 def authenticate_drive():
     gauth = GoogleAuth()
-    gauth.ServiceAuth()  # Usar la cuenta de servicio de credentials.json
+    gauth.settings["service_config_filepath"] = "credentials.json"
+    gauth.ServiceAuth()
     drive = GoogleDrive(gauth)
     return drive
 
