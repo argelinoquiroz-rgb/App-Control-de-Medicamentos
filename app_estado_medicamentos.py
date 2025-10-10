@@ -1,8 +1,8 @@
 import streamlit as st
 import os
 import json
-import mimetypes
 import pandas as pd
+import mimetypes
 from datetime import datetime
 from pydrive2.auth import GoogleAuth
 from pydrive2.drive import GoogleDrive
@@ -14,21 +14,23 @@ st.set_page_config(page_title="Control de Estado de Medicamentos", page_icon="�
 GOOGLE_DRIVE_FOLDER_ID = "1itzZF2zLNLmGEDm-ok8FD_rhadaIUM_Z"  # Carpeta de Google Drive
 SERVICE_ACCOUNT_FILE = "service_account.json"
 
-# ---------------- GOOGLE DRIVE AUTH ----------------
-# Graba el secreto como archivo JSON
+# Guardar el secreto de Service Account como JSON
 if "service_account" in st.secrets:
     creds = dict(st.secrets["service_account"])
     with open(SERVICE_ACCOUNT_FILE, "w") as f:
         json.dump(creds, f)
 
+# ---------------- GOOGLE DRIVE AUTH ----------------
 def authenticate_drive():
     """
-    Autenticación con Google Drive usando service account.
-    Compatible con Streamlit Cloud.
+    Autenticación con Service Account, compatible con Streamlit Cloud.
     """
-    gauth = GoogleAuth()
-    gauth.settings['client_config_backend'] = 'service'
-    gauth.settings['service_config'] = {"service_account_json_path": SERVICE_ACCOUNT_FILE}
+    gauth = GoogleAuth(settings={
+        "client_config_backend": "service",
+        "service_config": {
+            "service_account_json_path": SERVICE_ACCOUNT_FILE
+        }
+    })
     gauth.ServiceAuth()
     drive = GoogleDrive(gauth)
     return drive
@@ -75,17 +77,15 @@ def save_support_file(uploaded_file, consecutivo, nombre, drive, folder_id):
     ext = os.path.splitext(uploaded_file.name)[1]
     safe_name = f"{consecutivo}_{nombre.replace(' ', '_')}{ext}"
 
-    # Guardar temporalmente el archivo
     temp_path = f"temp_{safe_name}"
     with open(temp_path, "wb") as f:
         f.write(uploaded_file.getbuffer())
 
-    # Subir a Google Drive
     file_drive = drive.CreateFile({'title': safe_name, "parents": [{"id": folder_id}]})
     file_drive.SetContentFile(temp_path)
     file_drive.Upload()
     file_drive.InsertPermission({'type': 'anyone', 'value': 'anyone', 'role': 'reader'})
-    os.remove(temp_path)  # Borra el archivo local temporal
+    os.remove(temp_path)
 
     download_url = f"https://drive.google.com/uc?id={file_drive['id']}&export=download"
     return download_url
@@ -109,7 +109,7 @@ def sidebar_login():
                 st.rerun()
             else:
                 st.sidebar.error("❌ Usuario o contraseña incorrectos.")
-    else:  # Crear usuario
+    else:
         nuevo_usuario = st.sidebar.text_input("Nuevo usuario", key="sidebar_nuevo_usuario")
         nueva_contrasena = st.sidebar.text_input("Nueva contraseña", type="password", key="sidebar_nueva_contrasena")
         if st.sidebar.button("Crear usuario"):
@@ -124,16 +124,12 @@ def main_menu():
     opciones = ["Registrar medicamento", "Registros guardados"]
     if st.session_state.get("usuario") == "admin":
         opciones.append("Gestión de usuarios")
-    selected = st.radio(
-        "Seleccione una opción",
-        opciones,
-        horizontal=True, key="main_menu_radio")
+    selected = st.radio("Seleccione una opción", opciones, horizontal=True, key="main_menu_radio")
     return selected
 
 # ---------------- PAGES ----------------
 def page_registrar():
     st.title("➕ Registrar medicamento")
-
     estados = {
         "Agotado": "🟡 Agotado: No disponible temporalmente en inventario interno.",
         "Desabastecido": "🔴 Desabastecido: No disponible en inventario ni mercado nacional.",
@@ -157,7 +153,7 @@ def page_registrar():
     laboratorio = st.text_input("🏭 Laboratorio", key="lab_input").strip().upper()
     presentacion = st.text_input("📦 Presentación", key="pres_input").strip()
     observaciones = st.text_area("📝 Observaciones", key="obs_input").strip()
-    soporte = st.file_uploader("📎 Subir soporte (OBLIGATORIO) — PDF/JPG/PNG", type=["pdf", "jpg", "jpeg", "png"], key="soporte_input")
+    soporte = st.file_uploader("📎 Subir soporte (OBLIGATORIO) — PDF/JPG/PNG", type=["pdf","jpg","jpeg","png"], key="soporte_input")
 
     if st.button("💾 Guardar registro"):
         if not (plu and nombre and soporte):
@@ -165,7 +161,6 @@ def page_registrar():
         else:
             df = load_records()
             consecutivo = len(df) + 1
-
             drive = authenticate_drive()
             ruta_soporte = save_support_file(soporte, consecutivo, nombre, drive, GOOGLE_DRIVE_FOLDER_ID)
 
@@ -199,6 +194,7 @@ def page_registros():
     else:
         df_filtered = df
 
+    # Mostrar datos sin columna soporte
     display_df = df_filtered.copy()
     display_df.drop(columns=["soporte"], inplace=True, errors='ignore')
     st.dataframe(display_df, use_container_width=True)
@@ -207,10 +203,7 @@ def page_registros():
     for idx, row in df_filtered.iterrows():
         soporte_url = row.get("soporte", "")
         if soporte_url:
-            st.markdown(
-                f"<a href='{soporte_url}' target='_blank'>📥 Descargar {row.get('nombre_comercial', '')}</a>",
-                unsafe_allow_html=True
-            )
+            st.markdown(f"<a href='{soporte_url}' target='_blank'>📥 Descargar {row.get('nombre_comercial', '')}</a>", unsafe_allow_html=True)
 
 def page_gestion_usuarios():
     st.title("👥 Gestión de usuarios")
