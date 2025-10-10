@@ -12,38 +12,29 @@ st.set_page_config(page_title="Control de Estado de Medicamentos", page_icon="�
 # Ruta fija en OneDrive
 ONE_DRIVE_DIR = r"C:\Users\lidercompras\OneDrive - pharmaser.com.co\Documentos\Reportes\01_Informes Power BI\01_Analisis de Solicitudes y Ordenes de Compras\Actualiza Informes Phyton\control_estado_medicamentos"
 
-# Crear carpeta base si no existe
 os.makedirs(ONE_DRIVE_DIR, exist_ok=True)
 BASE_DIR = ONE_DRIVE_DIR
 
-# Archivos principales
 USERS_FILE = os.path.join(BASE_DIR, "usuarios.csv")
 DATA_FILE = os.path.join(BASE_DIR, "registros_medicamentos.csv")
 SOPORTES_DIR = os.path.join(BASE_DIR, "soportes")
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 LOGO_PATH = os.path.join(ASSETS_DIR, "logo_empresa.png")
 
-# Crear carpetas necesarias
 os.makedirs(SOPORTES_DIR, exist_ok=True)
 os.makedirs(ASSETS_DIR, exist_ok=True)
 
-# ---------------- UTIL: usuarios ----------------
+# ---------------- UTIL ----------------
 def load_users():
     if not os.path.exists(USERS_FILE):
-        pd.DataFrame({"usuario": ["admin"], "contrasena": ["250382"]}).to_csv(USERS_FILE, index=False)
-    df = pd.read_csv(USERS_FILE, dtype=str)
+        pd.DataFrame({"usuario":["admin"],"contrasena":["250382"]}).to_csv(USERS_FILE,index=False)
+    df = pd.read_csv(USERS_FILE,dtype=str)
     df.columns = [c.strip().lower().replace("ñ","n") for c in df.columns]
-    if "usuario" not in df.columns:
-        for alt in ["user","username","usuario "]:
-            if alt in df.columns: df.rename(columns={alt:"usuario"}, inplace=True); break
-    if "contrasena" not in df.columns:
-        for alt in ["contrasena","contraseña","password","passwd"]:
-            if alt in df.columns: df.rename(columns={alt:"contrasena"}, inplace=True); break
     df["usuario"] = df["usuario"].astype(str).str.strip().str.lower()
     df["contrasena"] = df["contrasena"].astype(str).str.strip()
     return df[["usuario","contrasena"]]
 
-def save_user(username, password):
+def save_user(username,password):
     df = load_users()
     if username.lower().strip() in df["usuario"].values:
         return False,"Usuario ya existe"
@@ -52,10 +43,9 @@ def save_user(username, password):
     df.to_csv(USERS_FILE,index=False)
     return True,"Usuario creado correctamente ✅"
 
-# ---------------- UTIL: registros ----------------
 def load_records():
     if os.path.exists(DATA_FILE):
-        df = pd.read_csv(DATA_FILE, dtype=str)
+        df = pd.read_csv(DATA_FILE,dtype=str)
         df.fillna("", inplace=True)
         return df
     else:
@@ -81,11 +71,11 @@ def guess_mime(path):
     mime,_ = mimetypes.guess_type(path)
     return mime or "application/octet-stream"
 
-# ---------------- UI: login ----------------
+# ---------------- UI ----------------
 def show_logo_center():
     if os.path.exists(LOGO_PATH):
         img = Image.open(LOGO_PATH)
-        st.image(img,width=220)
+        st.image(img,width=200)
     else:
         st.markdown("<h3 style='text-align:center;'>💊</h3>", unsafe_allow_html=True)
 
@@ -111,61 +101,37 @@ def login_page():
             else:
                 st.error("❌ Usuario o contraseña incorrectos.")
 
-# ---------------- UI: sidebar ----------------
-def app_sidebar():
-    if os.path.exists(LOGO_PATH):
-        st.sidebar.image(LOGO_PATH,width=150)
-
-    st.sidebar.markdown(f"**👤 Usuario:** `{st.session_state.get('usuario','')}`")
-    st.sidebar.markdown("---")
-
-    # Crear usuario solo si admin
-    if st.session_state.get("usuario")=="admin":
-        with st.sidebar.expander("➕ Crear usuario", expanded=False):
-            new_user = st.text_input("Nuevo usuario", key="new_user")
-            new_pass = st.text_input("Contraseña", type="password", key="new_pass")
-            if st.button("Crear usuario", key="create_user_btn"):
-                if not new_user or not new_pass:
-                    st.warning("Completa usuario y contraseña.")
-                else:
-                    ok,msg = save_user(new_user,new_pass)
-                    if ok: st.success(msg)
-                    else: st.warning(msg)
-
-    st.sidebar.markdown("---")
+# ---------------- MENU SUPERIOR ----------------
+def top_menu():
     menu_items = ["Inicio","Registrar medicamento","Registros guardados"]
     if st.session_state.get("usuario")=="admin":
         menu_items.append("Gestión de usuarios")
-    menu = st.sidebar.selectbox("📋 Navegación", menu_items)
-    st.sidebar.markdown("---")
-    if st.sidebar.button("🔒 Cerrar sesión"):
-        for k in ["usuario","logged_in"]:
-            if k in st.session_state: del st.session_state[k]
-        st.rerun()
+    menu = st.selectbox("📋 Navegación", menu_items, index=0, horizontal=True)
     return menu
 
 # ---------------- PAGES ----------------
 def page_inicio():
     st.title("🏠 Inicio")
-    st.info("Bienvenido al sistema de control de estado de medicamentos. Usa el menú lateral para navegar.")
+    st.info("Bienvenido al sistema de control de estado de medicamentos.")
 
 def page_registrar():
     st.title("➕ Registrar medicamento")
 
-    explicaciones_estado = {
-        "Agotado":"🟡 **Agotado:** No disponible temporalmente en inventario interno.",
-        "Desabastecido":"🔴 **Desabastecido:** No disponible en inventario ni mercado nacional.",
-        "Descontinuado":"⚫ **Descontinuado:** Retirado del mercado definitivamente."
+    estados = {
+        "Agotado":"🟡 Agotado: No disponible temporalmente en inventario interno.",
+        "Desabastecido":"🔴 Desabastecido: No disponible en inventario ni mercado nacional.",
+        "Descontinuado":"⚫ Descontinuado: Retirado del mercado definitivamente."
     }
 
-    estado = st.selectbox("Estado del medicamento", list(explicaciones_estado.keys()))
-    st.info(explicaciones_estado[estado])
+    estado = st.selectbox("Estado del medicamento", list(estados.keys()))
+    st.info(estados[estado])
+
     fecha_actual = datetime.now().date()
     st.date_input("📅 Fecha de registro", value=fecha_actual, disabled=True)
 
     col1,col2 = st.columns(2)
     with col1:
-        plu = st.text_input("🔢 PLU (ej. 12345_ABC)", key="plu_input").strip().upper()
+        plu = st.text_input("🔢 PLU", key="plu_input").strip().upper()
     with col2:
         codigo_gen = plu.split("_")[0] if "_" in plu else ""
         st.text_input("🧬 Código Genérico", value=codigo_gen, disabled=True)
@@ -174,7 +140,6 @@ def page_registrar():
     laboratorio = st.text_input("🏭 Laboratorio", key="lab_input").strip().upper()
     presentacion = st.text_input("📦 Presentación", key="pres_input").strip()
     observaciones = st.text_area("📝 Observaciones", key="obs_input").strip()
-
     soporte = st.file_uploader("📎 Subir soporte (OBLIGATORIO) — PDF/JPG/PNG", type=["pdf","jpg","jpeg","png"], key="soporte_input")
 
     if st.button("💾 Guardar registro"):
@@ -207,7 +172,6 @@ def page_registros():
         st.info("No hay registros guardados aún.")
         return
 
-    # Filtro de búsqueda
     busqueda = st.text_input("🔍 Buscar registro por cualquier campo")
     if busqueda:
         mask = df.apply(lambda row: row.astype(str).str.contains(busqueda, case=False, na=False).any(), axis=1)
@@ -215,12 +179,10 @@ def page_registros():
     else:
         df_filtered = df
 
-    # Mostrar tabla
     display_df = df_filtered.copy()
     display_df.drop(columns=["soporte"], inplace=True, errors='ignore')
     st.dataframe(display_df, use_container_width=True)
 
-    # Botones de descarga de soporte
     st.markdown("### ⬇️ Descarga de soportes")
     for idx,row in df_filtered.iterrows():
         soporte_path = row.get("soporte","")
@@ -247,7 +209,7 @@ if "logged_in" not in st.session_state:
 if not st.session_state["logged_in"]:
     login_page()
 else:
-    menu = app_sidebar()
+    menu = top_menu()
     if menu=="Inicio": page_inicio()
     elif menu=="Registrar medicamento": page_registrar()
     elif menu=="Registros guardados": page_registros()
