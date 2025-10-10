@@ -1,4 +1,3 @@
-# app_estado_medicamentos.py
 import streamlit as st
 import pandas as pd
 import os
@@ -71,51 +70,48 @@ def guess_mime(path):
     mime,_ = mimetypes.guess_type(path)
     return mime or "application/octet-stream"
 
-# ---------------- UI ----------------
-def show_logo_center():
-    if os.path.exists(LOGO_PATH):
-        img = Image.open(LOGO_PATH)
-        st.image(img,width=200)
-    else:
-        st.markdown("<h3 style='text-align:center;'>💊</h3>", unsafe_allow_html=True)
+# ---------------- SIDEBAR LOGIN/REGISTER ----------------
+def sidebar_login():
+    st.sidebar.image(LOGO_PATH, width=150)
+    st.sidebar.title("💊 Control de Medicamentos")
+    menu = st.sidebar.radio("Acción", ["Iniciar sesión", "Crear usuario"], horizontal=True)
 
-def login_page():
-    st.markdown("<div style='text-align:center; margin-top: 10px;'>", unsafe_allow_html=True)
-    show_logo_center()
-    st.markdown("<h2 style='text-align:center; color:#0D3B66;'>Control de Estado de Medicamentos</h2>", unsafe_allow_html=True)
-    st.markdown("</div>")
-    st.write("Inicie sesión para acceder al sistema")
-    col1,col2,col3 = st.columns([1,2,1])
-    with col2:
-        usuario_input = st.text_input("Usuario", key="login_usuario")
-        contrasena_input = st.text_input("Contraseña", type="password", key="login_contrasena")
-        if st.button("Iniciar sesión", use_container_width=True):
+    if menu == "Iniciar sesión":
+        usuario = st.sidebar.text_input("Usuario", key="sidebar_login_usuario")
+        contrasena = st.sidebar.text_input("Contraseña", type="password", key="sidebar_login_contrasena")
+        if st.sidebar.button("Iniciar sesión"):
             users = load_users()
-            match = ((users["usuario"]==usuario_input.strip().lower()) &
-                     (users["contrasena"]==contrasena_input.strip())).any()
+            match = ((users["usuario"]==usuario.strip().lower()) &
+                     (users["contrasena"]==contrasena.strip())).any()
             if match:
-                st.session_state["usuario"]=usuario_input.strip().lower()
-                st.session_state["logged_in"]=True
+                st.session_state["usuario"] = usuario.strip().lower()
+                st.session_state["logged_in"] = True
                 st.success("✅ Inicio de sesión correcto.")
-                st.rerun()
+                st.experimental_rerun()
             else:
-                st.error("❌ Usuario o contraseña incorrectos.")
+                st.sidebar.error("❌ Usuario o contraseña incorrectos.")
+    else:  # Crear usuario
+        nuevo_usuario = st.sidebar.text_input("Nuevo usuario", key="sidebar_nuevo_usuario")
+        nueva_contrasena = st.sidebar.text_input("Nueva contraseña", type="password", key="sidebar_nueva_contrasena")
+        if st.sidebar.button("Crear usuario"):
+            ok, msg = save_user(nuevo_usuario, nueva_contrasena)
+            if ok:
+                st.sidebar.success(msg)
+            else:
+                st.sidebar.error(msg)
 
-# ---------------- MENU SUPERIOR ----------------
-def top_menu():
-    menu_items = ["Inicio","Registrar medicamento","Registros guardados"]
-    if st.session_state.get("usuario")=="admin":
-        menu_items.append("Gestión de usuarios")
-    menu = st.selectbox("📋 Navegación", menu_items, index=0)  # ← CORREGIDO
-    # Si prefieres menú horizontal, usa la siguiente línea y comenta la anterior:
-    # menu = st.radio("📋 Navegación", menu_items, index=0, horizontal=True)
-    return menu
+# ---------------- MENÚ SUPERIOR ----------------
+def main_menu():
+    opciones = ["Registrar medicamento", "Registros guardados"]
+    if st.session_state.get("usuario") == "admin":
+        opciones.append("Gestión de usuarios")
+    selected = st.radio(
+        "Seleccione una opción",
+        opciones,
+        horizontal=True, key="main_menu_radio")
+    return selected
 
 # ---------------- PAGES ----------------
-def page_inicio():
-    st.title("🏠 Inicio")
-    st.info("Bienvenido al sistema de control de estado de medicamentos.")
-
 def page_registrar():
     st.title("➕ Registrar medicamento")
 
@@ -204,15 +200,19 @@ def page_gestion_usuarios():
     users_df = load_users()
     st.dataframe(users_df, use_container_width=True)
 
-# ---------------- FLOW ----------------
+# ---------------- FLOW PRINCIPAL ----------------
 if "logged_in" not in st.session_state:
-    st.session_state["logged_in"]=False
+    st.session_state["logged_in"] = False
 
 if not st.session_state["logged_in"]:
-    login_page()
+    sidebar_login()
 else:
-    menu = top_menu()
-    if menu=="Inicio": page_inicio()
-    elif menu=="Registrar medicamento": page_registrar()
-    elif menu=="Registros guardados": page_registros()
-    elif menu=="Gestión de usuarios": page_gestion_usuarios()
+    st.sidebar.markdown(f"👤 Usuario: **{st.session_state.get('usuario','')}**")
+    st.sidebar.button("Cerrar sesión", on_click=lambda: st.session_state.update({"logged_in":False, "usuario":""}))
+    seleccion = main_menu()
+    if seleccion == "Registrar medicamento":
+        page_registrar()
+    elif seleccion == "Registros guardados":
+        page_registros()
+    elif seleccion == "Gestión de usuarios":
+        page_gestion_usuarios()
