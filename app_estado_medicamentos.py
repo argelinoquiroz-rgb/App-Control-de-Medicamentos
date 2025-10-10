@@ -10,7 +10,7 @@ from PIL import Image
 st.set_page_config(page_title="Control de Estado de Medicamentos", page_icon="💊", layout="wide")
 
 # Ruta fija en OneDrive
-ONE_DRIVE_DIR = r"C:\Users\lidercompras\OneDrive - pharmaser.com.co\Documentos\Reportes\01_Informes Power BI\01_Analisis de Solicitudes y Ordenes de Compras\Actualiza Informes Phyton\control_estado_medicamentos"
+ONE_DRIVE_DIR = r"C:\Users\lidercompras\OneDrive - pharmaser.com.co\Documentos\Reportes\01_Informes Power BI\01_Analisis de Solicitudes y Ordenes de Compras\Actualiza Informes Phyton\control_estado_medicamentos\soportes"
 
 # Crear carpeta base si no existe
 os.makedirs(ONE_DRIVE_DIR, exist_ok=True)
@@ -33,6 +33,7 @@ def load_users():
         pd.DataFrame({"usuario": ["admin"], "contrasena": ["250382"]}).to_csv(USERS_FILE, index=False)
     df = pd.read_csv(USERS_FILE, dtype=str)
     df.columns = [c.strip().lower().replace("ñ","n") for c in df.columns]
+
     if "usuario" not in df.columns:
         for alt in ["user","username","usuario "]:
             if alt in df.columns:
@@ -43,6 +44,12 @@ def load_users():
             if alt in df.columns:
                 df.rename(columns={alt:"contrasena"}, inplace=True)
                 break
+
+    if "usuario" not in df.columns or "contrasena" not in df.columns or df.empty:
+        pd.DataFrame({"usuario":["admin"],"contrasena":["250382"]}).to_csv(USERS_FILE,index=False)
+        df = pd.read_csv(USERS_FILE,dtype=str)
+        df.columns = [c.strip().lower().replace("ñ","n") for c in df.columns]
+
     df["usuario"] = df["usuario"].astype(str).str.strip().str.lower()
     df["contrasena"] = df["contrasena"].astype(str).str.strip()
     return df[["usuario","contrasena"]]
@@ -50,38 +57,44 @@ def load_users():
 def save_user(username,password):
     df = load_users()
     if username.lower().strip() in df["usuario"].values:
-        return False,"Usuario ya existe"
+        return False, "Usuario ya existe"
     new = pd.DataFrame({"usuario":[username.lower().strip()],"contrasena":[password.strip()]})
     df = pd.concat([df,new], ignore_index=True)
     df.to_csv(USERS_FILE,index=False)
-    return True,"Usuario creado correctamente ✅"
+    return True, "Usuario creado correctamente ✅"
 
 # ---------------- UTIL: registros ----------------
 def load_records():
+    expected_cols = ["consecutivo","fecha_hora","usuario","estado","plu","codigo_generico",
+                     "nombre_comercial","laboratorio","presentacion","observaciones","soporte"]
     if os.path.exists(DATA_FILE):
-        return pd.read_csv(DATA_FILE,dtype=str)
+        df = pd.read_csv(DATA_FILE,dtype=str)
+        for col in expected_cols:
+            if col not in df.columns:
+                df[col] = ""
+        return df[expected_cols]
     else:
-        cols = ["consecutivo","fecha_hora","usuario","estado","plu","codigo_generico",
-                "nombre_comercial","laboratorio","presentacion","observaciones","soporte"]
-        df = pd.DataFrame(columns=cols)
+        df = pd.DataFrame(columns=expected_cols)
         df.to_csv(DATA_FILE,index=False)
         return df
 
-def append_record(record:dict):
+def append_record(record: dict):
     df = load_records()
-    df = pd.concat([df,pd.DataFrame([record])], ignore_index=True)
+    df = pd.concat([df, pd.DataFrame([record])], ignore_index=True)
     df.to_csv(DATA_FILE,index=False)
 
-def save_support_file(uploaded_file, consecutivo, plu, nombre):
-    ext = os.path.splitext(uploaded_file.name)[1]
-    safe_name = f"{nombre.replace(' ','_')}_{consecutivo}{ext}"
+def save_support_file(uploaded_file, nombre_comercial):
+    df = load_records()
+    consecutivo = len(df) + 1
+    ext = uploaded_file.name.split('.')[-1]
+    safe_name = f"{nombre_comercial.replace(' ','_')}_{consecutivo}.{ext}"
     path = os.path.join(SOPORTES_DIR, safe_name)
-    with open(path,"wb") as f:
+    with open(path, "wb") as f:
         f.write(uploaded_file.getbuffer())
-    return path, safe_name
+    return path, consecutivo
 
 def guess_mime(path):
-    mime,_ = mimetypes.guess_type(path)
+    mime, _ = mimetypes.guess_type(path)
     return mime or "application/octet-stream"
 
 # ---------------- UI: login ----------------
@@ -93,9 +106,9 @@ def show_logo_center():
         st.markdown("<h3 style='text-align:center;'>💊</h3>", unsafe_allow_html=True)
 
 def login_page():
-    st.markdown("<div style='text-align:center; margin-top:10px;'>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align:center; margin-top:10px;'>",unsafe_allow_html=True)
     show_logo_center()
-    st.markdown("<h2 style='text-align:center; color:#0D3B66;'>Control de Estado de Medicamentos</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align:center; color:#0D3B66;'>Control de Estado de Medicamentos</h2>",unsafe_allow_html=True)
     st.markdown("</div>")
     st.write("**Inicie sesión** para acceder al sistema.")
     col1,col2,col3 = st.columns([1,2,1])
@@ -117,8 +130,10 @@ def login_page():
 def app_sidebar():
     if os.path.exists(LOGO_PATH):
         st.sidebar.image(LOGO_PATH,width=150)
+
     st.sidebar.markdown(f"**👤 Usuario:** `{st.session_state.get('usuario','')}`")
     st.sidebar.markdown("---")
+
     with st.sidebar.expander("➕ Crear usuario", expanded=False):
         new_user = st.text_input("Nuevo usuario", key="new_user")
         new_pass = st.text_input("Contraseña", type="password", key="new_pass")
@@ -127,8 +142,11 @@ def app_sidebar():
                 st.warning("Completa usuario y contraseña.")
             else:
                 ok,msg = save_user(new_user,new_pass)
-                if ok: st.success(msg)
-                else: st.warning(msg)
+                if ok:
+                    st.success(msg)
+                else:
+                    st.warning(msg)
+
     st.sidebar.markdown("---")
     menu = st.sidebar.radio("📋 Navegación", ["Inicio","Registrar medicamento","Registros guardados","Gestión de usuarios"])
     st.sidebar.markdown("---")
@@ -146,32 +164,35 @@ def page_inicio():
 def page_registrar():
     st.title("➕ Registrar medicamento")
     explicaciones_estado = {
-        "Agotado":"🟡 No disponible temporalmente en inventario interno.",
-        "Desabastecido":"🔴 No disponible ni en inventario interno ni mercado nacional.",
-        "Descontinuado":"⚫ Retirado del mercado por el fabricante o autoridad sanitaria."
+        "Agotado": "🟡 **Agotado:** No disponible temporalmente.",
+        "Desabastecido": "🔴 **Desabastecido:** No disponible en inventario ni mercado.",
+        "Descontinuado": "⚫ **Descontinuado:** Retirado del mercado."
     }
     estado = st.selectbox("Estado del medicamento", list(explicaciones_estado.keys()))
     st.info(explicaciones_estado[estado])
+
     fecha_actual = datetime.now().date()
     st.date_input("📅 Fecha de registro", value=fecha_actual, disabled=True)
+
     col1,col2 = st.columns(2)
     with col1:
         plu = st.text_input("🔢 PLU (ej. 12345_ABC)", key="plu_input").strip().upper()
     with col2:
         codigo_gen = plu.split("_")[0] if "_" in plu else ""
         st.text_input("🧬 Código Genérico", value=codigo_gen, disabled=True)
+
     nombre = st.text_input("💊 Nombre comercial", key="nombre_input").strip().upper()
     laboratorio = st.text_input("🏭 Laboratorio", key="lab_input").strip().upper()
     presentacion = st.text_input("📦 Presentación", key="pres_input").strip()
     observaciones = st.text_area("📝 Observaciones", key="obs_input").strip()
+
     soporte = st.file_uploader("📎 Subir soporte (OBLIGATORIO) — PDF/JPG/PNG", type=["pdf","jpg","jpeg","png"], key="soporte_input")
+
     if st.button("💾 Guardar registro"):
         if not (plu and nombre and soporte):
             st.error("Debes completar PLU, Nombre y subir el soporte.")
         else:
-            df = load_records()
-            consecutivo = len(df)+1
-            ruta_soporte, nombre_soporte = save_support_file(soporte, consecutivo, plu, nombre)
+            ruta_soporte, consecutivo = save_support_file(soporte, nombre)
             registro = {
                 "consecutivo": consecutivo,
                 "fecha_hora": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -183,7 +204,7 @@ def page_registrar():
                 "laboratorio": laboratorio,
                 "presentacion": presentacion,
                 "observaciones": observaciones,
-                "soporte": nombre_soporte
+                "soporte": ruta_soporte
             }
             append_record(registro)
             st.success("✅ Registro guardado correctamente.")
@@ -194,45 +215,51 @@ def page_registros():
     if df.empty:
         st.info("No hay registros guardados aún.")
         return
-    search_term = st.text_input("🔍 Buscar registro (por cualquier campo)").strip().lower()
+
+    # Filtro de búsqueda por cualquier campo
+    search_term = st.text_input("🔍 Buscar por cualquier campo").strip().lower()
     if search_term:
-        mask = df.apply(lambda row: row.astype(str).str.lower().str.contains(search_term).any(), axis=1)
-        df_filtered = df[mask]
+        df_filtered = df[df.apply(lambda row: row.astype(str).str.lower().str.contains(search_term).any(), axis=1)]
     else:
         df_filtered = df
-    st.dataframe(df_filtered[["consecutivo","fecha_hora","usuario","estado","plu","codigo_generico",
-                              "nombre_comercial","laboratorio","presentacion","observaciones"]],
-                 use_container_width=True)
-    st.markdown("### ⬇️ Soportes")
-    for idx,row in df_filtered.iterrows():
-        soporte_nombre = row.get("soporte","")
-        ruta_soporte = os.path.join(SOPORTES_DIR, soporte_nombre)
-        if os.path.exists(ruta_soporte):
-            with open(ruta_soporte,"rb") as f:
-                data_bytes = f.read()
-            st.download_button(
-                label=f"📥 Descargar soporte - {row.get('nombre_comercial','')}",
-                data=data_bytes,
-                file_name=soporte_nombre,
-                mime=guess_mime(ruta_soporte)
-            )
-        else:
-            st.warning(f"Soporte no encontrado para registro {row.get('consecutivo')}")
+
+    # Mostrar tabla con columna de soportes
+    if not df_filtered.empty:
+        st.dataframe(df_filtered[["consecutivo","fecha_hora","usuario","estado","plu","codigo_generico",
+                                  "nombre_comercial","laboratorio","presentacion","observaciones"]],
+                     use_container_width=True)
+
+        st.markdown("### ⬇️ Descargas de soportes")
+        for idx,row in df_filtered.iterrows():
+            soporte_path = row.get("soporte","")
+            if isinstance(soporte_path,str) and os.path.exists(soporte_path):
+                mime = guess_mime(soporte_path)
+                label = f"📥 Descargar"
+                with open(soporte_path,"rb") as f:
+                    data_bytes = f.read()
+                st.download_button(label=label,data=data_bytes,
+                                   file_name=os.path.basename(soporte_path),mime=mime)
+            else:
+                st.warning(f"Soporte no encontrado para registro {idx}")
 
 def page_gestion_usuarios():
     st.title("👥 Gestión de usuarios")
-    df_users = load_users()
-    st.dataframe(df_users,use_container_width=True)
+    users_df = load_users()
+    st.dataframe(users_df,use_container_width=True)
 
 # ---------------- FLOW ----------------
 if "logged_in" not in st.session_state:
-    st.session_state["logged_in"]=False
+    st.session_state["logged_in"] = False
 
 if not st.session_state["logged_in"]:
     login_page()
 else:
     menu = app_sidebar()
-    if menu=="Inicio": page_inicio()
-    elif menu=="Registrar medicamento": page_registrar()
-    elif menu=="Registros guardados": page_registros()
-    elif menu=="Gestión de usuarios": page_gestion_usuarios()
+    if menu=="Inicio":
+        page_inicio()
+    elif menu=="Registrar medicamento":
+        page_registrar()
+    elif menu=="Registros guardados":
+        page_registros()
+    elif menu=="Gestión de usuarios":
+        page_gestion_usuarios()
