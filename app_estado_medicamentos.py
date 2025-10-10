@@ -106,7 +106,9 @@ def top_menu():
     menu_items = ["Inicio","Registrar medicamento","Registros guardados"]
     if st.session_state.get("usuario")=="admin":
         menu_items.append("Gestión de usuarios")
-    menu = st.selectbox("📋 Navegación", menu_items, index=0, horizontal=True)
+    menu = st.selectbox("📋 Navegación", menu_items, index=0)  # ← CORREGIDO
+    # Si prefieres menú horizontal, usa la siguiente línea y comenta la anterior:
+    # menu = st.radio("📋 Navegación", menu_items, index=0, horizontal=True)
     return menu
 
 # ---------------- PAGES ----------------
