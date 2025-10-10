@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime
-from io import BytesIO
 import base64
 
 # ==============================
@@ -18,9 +17,6 @@ st.set_page_config(
 os.makedirs("soportes", exist_ok=True)
 os.makedirs("assets", exist_ok=True)
 
-# ==============================
-# BASE DE DATOS LOCAL
-# ==============================
 DATA_FILE = "registros_medicamentos.csv"
 USERS_FILE = "usuarios.csv"
 
@@ -31,7 +27,10 @@ def cargar_usuarios():
     if os.path.exists(USERS_FILE):
         return pd.read_csv(USERS_FILE)
     else:
-        return pd.DataFrame(columns=["usuario", "contraseña"])
+        # Crear usuario admin por defecto
+        df = pd.DataFrame([["admin", "250382"]], columns=["usuario", "contraseña"])
+        df.to_csv(USERS_FILE, index=False)
+        return df
 
 def guardar_usuario(usuario, contraseña):
     df = cargar_usuarios()
@@ -55,19 +54,25 @@ def guardar_registro(data):
     df.to_csv(DATA_FILE, index=False)
 
 def descargar_soporte(ruta):
-    with open(ruta, "rb") as f:
-        b64 = base64.b64encode(f.read()).decode()
-    href = f'<a href="data:file/octet-stream;base64,{b64}" download="{os.path.basename(ruta)}">📄 Descargar Soporte</a>'
-    return href
+    if os.path.exists(ruta):
+        with open(ruta, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode()
+        href = f'<a href="data:file/octet-stream;base64,{b64}" download="{os.path.basename(ruta)}">📄 Descargar Soporte</a>'
+        return href
+    else:
+        return "❌ Archivo no encontrado."
 
 # ==============================
 # LOGIN
 # ==============================
 def login():
-    st.markdown("## 🔐 Inicio de Sesión")
+    st.title("💊 Control de Estado de Medicamentos")
+    st.markdown("### 🔐 Iniciar sesión para continuar")
+
     usuario = st.text_input("Usuario")
     contraseña = st.text_input("Contraseña", type="password")
-    if st.button("Ingresar"):
+
+    if st.button("Ingresar", use_container_width=True):
         usuarios = cargar_usuarios()
         if ((usuarios["usuario"] == usuario) & (usuarios["contraseña"] == contraseña)).any():
             st.session_state["autenticado"] = True
@@ -78,26 +83,40 @@ def login():
             st.error("❌ Usuario o contraseña incorrectos")
 
 # ==============================
-# INTERFAZ PRINCIPAL
+# APLICACIÓN PRINCIPAL
 # ==============================
 def app_principal():
-    st.sidebar.markdown("### 💊 Control de Estado de Medicamentos")
-    menu = st.sidebar.radio(
-        "Navegación",
-        ["Inicio", "Registrar Medicamento", "Registros Guardados", "Gestión de Usuarios"]
-    )
+    # --- Panel lateral profesional ---
+    with st.sidebar:
+        st.markdown("<h2 style='text-align:center;'>💊 Sistema de Control</h2>", unsafe_allow_html=True)
+        st.markdown("---")
 
-    if menu == "Inicio":
-        st.markdown("## 📋 Bienvenido al Sistema de Control de Medicamentos")
-        st.write("Seleccione una opción en el panel lateral para comenzar.")
+        menu = st.radio(
+            "Navegación",
+            ["🏠 Inicio", "➕ Registrar Medicamento", "📦 Registros Guardados", "👥 Gestión de Usuarios"],
+            label_visibility="collapsed"
+        )
 
-    elif menu == "Registrar Medicamento":
-        st.markdown("## 🧾 Registrar Nuevo Medicamento")
+        st.markdown("---")
+        st.markdown(f"**Usuario activo:** `{st.session_state['usuario']}`")
+        if st.button("🔓 Cerrar sesión", use_container_width=True):
+            st.session_state["autenticado"] = False
+            st.rerun()
 
+    # --- Contenido principal según el menú ---
+    if menu == "🏠 Inicio":
+        st.markdown("## 🏠 Bienvenido al Sistema de Control de Medicamentos")
+        st.write("Use el panel lateral para registrar, consultar o administrar usuarios del sistema.")
+        st.markdown("---")
+
+    elif menu == "➕ Registrar Medicamento":
+        st.markdown("## ➕ Registrar Medicamento")
+
+        # Estados con explicación
         explicaciones_estado = {
             "Agotado": "El medicamento no está disponible temporalmente en el inventario interno, pero sí existe en el mercado.",
-            "Desabastecido": "No se encuentra disponible ni en el inventario interno ni en el mercado nacional.",
-            "Descontinuado": "Ha sido retirado del mercado por decisión del fabricante o autoridad sanitaria."
+            "Desabastecido": "El medicamento no se encuentra disponible ni en el inventario interno ni en el mercado nacional.",
+            "Descontinuado": "El medicamento ha sido retirado del mercado por decisión del fabricante o autoridad sanitaria."
         }
 
         estado = st.selectbox("Estado", list(explicaciones_estado.keys()))
@@ -106,19 +125,19 @@ def app_principal():
         plu = st.text_input("PLU")
         nombre = st.text_input("Nombre del Medicamento")
         observaciones = st.text_area("Observaciones")
-        soporte = st.file_uploader("Subir soporte (obligatorio)", type=["pdf", "jpg", "png"])
+        soporte = st.file_uploader("📎 Subir soporte (obligatorio)", type=["pdf", "jpg", "png"])
 
-        # Fecha del día (no editable)
+        # Fecha automática (no editable)
         fecha_actual = datetime.now().strftime("%Y-%m-%d")
         st.write(f"📅 Fecha del registro: **{fecha_actual}**")
 
-        # Código genérico automático
+        # Código genérico automático desde el PLU
         codigo_generico = ""
         if "_" in plu:
             codigo_generico = plu.split("_")[0]
         st.text_input("Código Genérico", value=codigo_generico, disabled=True)
 
-        if st.button("Guardar Registro"):
+        if st.button("💾 Guardar Registro", use_container_width=True):
             if not soporte:
                 st.error("❌ Debes subir un archivo de soporte antes de guardar.")
             else:
@@ -138,30 +157,25 @@ def app_principal():
                 guardar_registro(data)
                 st.success("✅ Registro guardado correctamente.")
 
-    elif menu == "Registros Guardados":
-        st.markdown("## 📚 Registros Guardados")
+    elif menu == "📦 Registros Guardados":
+        st.markdown("## 📦 Registros Guardados")
         df = cargar_datos()
         if df.empty:
             st.info("No hay registros guardados aún.")
         else:
-            for i, row in df.iterrows():
-                st.markdown(f"""
-                **Fecha:** {row['Fecha']}  
-                **PLU:** {row['PLU']}  
-                **Código Genérico:** {row['Código Genérico']}  
-                **Nombre:** {row['Nombre']}  
-                **Estado:** {row['Estado']}  
-                **Observaciones:** {row['Observaciones']}  
-                {descargar_soporte(row['Soporte'])}
-                """)
-                st.markdown("---")
+            st.dataframe(df[["Fecha", "PLU", "Código Genérico", "Nombre", "Estado", "Observaciones"]], use_container_width=True)
 
-    elif menu == "Gestión de Usuarios":
-        st.markdown("## 👤 Gestión de Usuarios")
+            for i, row in df.iterrows():
+                st.markdown(descargar_soporte(row["Soporte"]), unsafe_allow_html=True)
+
+    elif menu == "👥 Gestión de Usuarios":
+        st.markdown("## 👥 Gestión de Usuarios")
         st.subheader("Crear nuevo usuario")
+
         nuevo_usuario = st.text_input("Nuevo usuario")
         nueva_contraseña = st.text_input("Contraseña", type="password")
-        if st.button("Crear usuario"):
+
+        if st.button("➕ Crear Usuario", use_container_width=True):
             guardar_usuario(nuevo_usuario, nueva_contraseña)
 
 # ==============================
@@ -174,4 +188,3 @@ if not st.session_state["autenticado"]:
     login()
 else:
     app_principal()
-
