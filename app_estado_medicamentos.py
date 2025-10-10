@@ -31,35 +31,59 @@ if not os.path.exists(USERS_FILE):
 else:
     df_usuarios = pd.read_csv(USERS_FILE)
 
-# Asegurar limpieza de texto
+# Asegurar limpieza
 df_usuarios["usuario"] = df_usuarios["usuario"].astype(str).str.strip().str.lower()
 df_usuarios["contrasena"] = df_usuarios["contrasena"].astype(str).str.strip()
 
 # ==============================
-# INICIO DE SESIÓN
+# PANEL LATERAL: LOGIN Y CREACIÓN DE USUARIO
 # ==============================
-st.sidebar.header("🔐 Inicio de sesión")
+st.sidebar.header("💊 Control de acceso")
 
-if "usuario" in st.session_state:
-    st.sidebar.success(f"Sesión activa: {st.session_state['usuario']}")
-    if st.sidebar.button("Cerrar sesión"):
-        st.session_state.clear()
-        st.rerun()
-else:
-    usuario_input = st.sidebar.text_input("👤 Usuario (nombre.apellido)").strip().lower()
-    contrasena_input = st.sidebar.text_input("🔑 Contraseña", type="password")
+# ---- EXPANDER LOGIN ----
+with st.sidebar.expander("🔐 Iniciar sesión", expanded=True):
+    if "usuario" in st.session_state:
+        st.success(f"Sesión activa: {st.session_state['usuario']}")
+        if st.button("Cerrar sesión"):
+            st.session_state.clear()
+            st.rerun()
+    else:
+        usuario_input = st.text_input("👤 Usuario (nombre.apellido)").strip().lower()
+        contrasena_input = st.text_input("🔑 Contraseña", type="password")
 
-    if st.sidebar.button("Ingresar"):
-        if usuario_input in df_usuarios["usuario"].values:
-            stored_pass = df_usuarios.loc[df_usuarios["usuario"] == usuario_input, "contrasena"].values[0]
-            if contrasena_input == stored_pass:
-                st.session_state["usuario"] = usuario_input
-                st.success(f"Bienvenido, {usuario_input}")
-                st.rerun()
+        if st.button("Ingresar"):
+            if usuario_input in df_usuarios["usuario"].values:
+                stored_pass = df_usuarios.loc[df_usuarios["usuario"] == usuario_input, "contrasena"].values[0]
+                if contrasena_input == stored_pass:
+                    st.session_state["usuario"] = usuario_input
+                    st.success(f"Bienvenido, {usuario_input}")
+                    st.rerun()
+                else:
+                    st.error("❌ Contraseña incorrecta")
             else:
-                st.sidebar.error("❌ Contraseña incorrecta")
+                st.error("❌ Usuario no registrado")
+
+# ---- EXPANDER CREAR USUARIO ----
+with st.sidebar.expander("👥 Crear nuevo usuario"):
+    nuevo_usuario = st.text_input("Nuevo usuario (nombre.apellido)").strip().lower()
+    nuevo_correo = st.text_input("Correo electrónico").strip().lower()
+    nueva_contra = st.text_input("Contraseña", type="password")
+
+    if st.button("➕ Crear usuario"):
+        if not nuevo_usuario or not nuevo_correo or not nueva_contra:
+            st.error("⚠️ Todos los campos son obligatorios.")
+        elif not nuevo_correo.endswith("@pharmaser.com.co"):
+            st.error("El correo debe terminar en @pharmaser.com.co")
+        elif nuevo_usuario in df_usuarios["usuario"].values:
+            st.error("Este usuario ya existe.")
         else:
-            st.sidebar.error("❌ Usuario no registrado")
+            df_usuarios = pd.concat([df_usuarios, pd.DataFrame([{
+                "usuario": nuevo_usuario,
+                "contrasena": nueva_contra,
+                "correo": nuevo_correo
+            }])], ignore_index=True)
+            df_usuarios.to_csv(USERS_FILE, index=False)
+            st.success("✅ Usuario creado correctamente.")
 
 # ==============================
 # INTERFAZ PRINCIPAL (DESPUÉS DEL LOGIN)
@@ -71,7 +95,7 @@ if "usuario" in st.session_state:
     st.markdown(f"👤 **Usuario activo:** {usuario}")
     st.markdown("---")
 
-    tabs = st.tabs(["🧾 Registrar medicamento", "📂 Registros guardados", "👥 Administración de usuarios"])
+    tabs = st.tabs(["🧾 Registrar medicamento", "📂 Registros guardados"])
 
     # ==========================================================
     # 🧾 TAB 1: REGISTRAR MEDICAMENTO
@@ -174,28 +198,3 @@ if "usuario" in st.session_state:
                 st.info("No hay registros aún.")
         else:
             st.info("No hay registros aún.")
-
-    # ==========================================================
-    # 👥 TAB 3: ADMINISTRACIÓN DE USUARIOS
-    # ==========================================================
-    with tabs[2]:
-        st.subheader("👥 Crear nuevo usuario")
-        nuevo_usuario = st.text_input("Usuario (nombre.apellido)").strip().lower()
-        nuevo_correo = st.text_input("Correo electrónico").strip().lower()
-        nueva_contra = st.text_input("Contraseña", type="password")
-
-        if st.button("➕ Crear usuario"):
-            if not nuevo_usuario or not nuevo_correo or not nueva_contra:
-                st.error("⚠️ Todos los campos son obligatorios.")
-            elif not nuevo_correo.endswith("@pharmaser.com.co"):
-                st.error("El correo debe terminar en @pharmaser.com.co")
-            elif nuevo_usuario in df_usuarios["usuario"].values:
-                st.error("Este usuario ya existe.")
-            else:
-                df_usuarios = pd.concat([df_usuarios, pd.DataFrame([{
-                    "usuario": nuevo_usuario,
-                    "contrasena": nueva_contra,
-                    "correo": nuevo_correo
-                }])], ignore_index=True)
-                df_usuarios.to_csv(USERS_FILE, index=False)
-                st.success("✅ Usuario creado correctamente.")
