@@ -40,9 +40,10 @@ st.markdown("""
     .main-title {
         text-align: center;
         color: #1B263B;
-        font-size: 32px;
+        font-size: 34px;
         font-weight: 700;
-        margin-bottom: 30px;
+        margin-top: 30px;
+        margin-bottom: 10px;
     }
     .sub-title {
         color: #0D1B2A;
@@ -63,33 +64,48 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================
-# MENÚ PRINCIPAL (Pestañas superiores)
+# SESIÓN DE USUARIO
 # ==============================
-tabs = st.tabs(["🔐 Inicio de sesión", "💊 Registrar medicamento", "📋 Registros guardados", "➕ Crear usuario"])
+if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
 
 # ==============================
-# 1️⃣ INICIO DE SESIÓN
+# LOGIN PAGE
 # ==============================
-with tabs[0]:
-    st.markdown("<div class='main-title'>🔐 Inicio de Sesión</div>", unsafe_allow_html=True)
+if not st.session_state["logged_in"]:
+    st.markdown("<div class='main-title'>💊 Control de Estado de Medicamentos</div>", unsafe_allow_html=True)
+    st.markdown("#### 🔐 Inicia sesión para continuar")
 
-    usuario = st.text_input("Usuario")
-    contraseña = st.text_input("Contraseña", type="password")
+    col1, col2 = st.columns([1,1])
+    with col1:
+        usuario = st.text_input("Usuario")
+    with col2:
+        contraseña = st.text_input("Contraseña", type="password")
 
     if st.button("Iniciar sesión"):
         if usuario == "admin" and contraseña == "123":
+            st.session_state["logged_in"] = True
+            st.session_state["usuario"] = usuario
             st.success("✅ Inicio de sesión exitoso.")
+            st.experimental_rerun()
         else:
             st.error("❌ Usuario o contraseña incorrectos.")
 
 # ==============================
-# 2️⃣ REGISTRAR MEDICAMENTO
+# INTERFAZ PRINCIPAL (DESPUÉS DE LOGEARSE)
 # ==============================
-with tabs[1]:
-    st.markdown("<div class='main-title'>💊 Registrar Medicamento</div>", unsafe_allow_html=True)
+else:
+    st.markdown(f"<div class='main-title'>💊 Sistema de Control de Estado de Medicamentos</div>", unsafe_allow_html=True)
+    st.markdown(f"👋 Bienvenido, **{st.session_state['usuario']}**")
 
-    with st.container():
+    tabs = st.tabs(["💊 Registrar medicamento", "📋 Registros guardados", "➕ Crear usuario"])
+
+    # ==============================
+    # 1️⃣ REGISTRAR MEDICAMENTO
+    # ==============================
+    with tabs[0]:
         st.markdown("<div class='sub-title'>Estado del medicamento</div>", unsafe_allow_html=True)
+
         explicaciones_estado = {
             "Agotado": "El medicamento no está disponible temporalmente en el inventario interno, pero sí existe en el mercado y puede ser adquirido nuevamente.",
             "Desabastecido": "El medicamento no se encuentra disponible ni en el inventario interno ni en el mercado nacional.",
@@ -99,8 +115,8 @@ with tabs[1]:
         estado = st.selectbox("Selecciona el estado", list(explicaciones_estado.keys()))
         st.info(explicaciones_estado[estado])
 
-    with st.container():
         st.markdown("<div class='sub-title'>Datos del medicamento</div>", unsafe_allow_html=True)
+
         fecha = datetime.today().strftime("%Y-%m-%d")
         st.text_input("📅 Fecha de registro", value=fecha, disabled=True)
 
@@ -109,7 +125,6 @@ with tabs[1]:
             nombre = st.text_input("💊 Nombre del medicamento")
             plu = st.text_input("🔢 PLU (Ejemplo: 12345_ABC)")
         with col2:
-            # Autocompletar Código Genérico
             codigo_generico = ""
             if "_" in plu:
                 codigo_generico = plu.split("_")[0]
@@ -137,39 +152,45 @@ with tabs[1]:
                 guardar_datos(df)
                 st.success("✅ Registro guardado correctamente.")
 
-# ==============================
-# 3️⃣ REGISTROS GUARDADOS
-# ==============================
-with tabs[2]:
-    st.markdown("<div class='main-title'>📋 Registros Guardados</div>", unsafe_allow_html=True)
+    # ==============================
+    # 2️⃣ REGISTROS GUARDADOS
+    # ==============================
+    with tabs[1]:
+        st.markdown("<div class='sub-title'>Registros Guardados</div>", unsafe_allow_html=True)
 
-    df = cargar_datos()
-    if df.empty:
-        st.warning("⚠️ No hay registros guardados.")
-    else:
-        st.dataframe(df, use_container_width=True)
-
-        for _, row in df.iterrows():
-            if pd.notna(row["Soporte"]) and os.path.exists(row["Soporte"]):
-                with open(row["Soporte"], "rb") as f:
-                    st.download_button(
-                        label=f"📥 Descargar soporte de {row['Nombre']}",
-                        data=f,
-                        file_name=os.path.basename(row["Soporte"]),
-                        mime="application/octet-stream"
-                    )
-
-# ==============================
-# 4️⃣ CREAR USUARIO
-# ==============================
-with tabs[3]:
-    st.markdown("<div class='main-title'>➕ Crear Nuevo Usuario</div>", unsafe_allow_html=True)
-
-    nuevo_usuario = st.text_input("👤 Nombre de usuario")
-    nueva_contraseña = st.text_input("🔑 Contraseña", type="password")
-
-    if st.button("Crear usuario"):
-        if nuevo_usuario and nueva_contraseña:
-            st.success(f"✅ Usuario '{nuevo_usuario}' creado correctamente.")
+        df = cargar_datos()
+        if df.empty:
+            st.warning("⚠️ No hay registros guardados.")
         else:
-            st.warning("⚠️ Completa todos los campos para crear un usuario.")
+            st.dataframe(df, use_container_width=True)
+            for _, row in df.iterrows():
+                if pd.notna(row["Soporte"]) and os.path.exists(row["Soporte"]):
+                    with open(row["Soporte"], "rb") as f:
+                        st.download_button(
+                            label=f"📥 Descargar soporte de {row['Nombre']}",
+                            data=f,
+                            file_name=os.path.basename(row["Soporte"]),
+                            mime="application/octet-stream"
+                        )
+
+    # ==============================
+    # 3️⃣ CREAR USUARIO
+    # ==============================
+    with tabs[2]:
+        st.markdown("<div class='sub-title'>Crear Nuevo Usuario</div>", unsafe_allow_html=True)
+
+        nuevo_usuario = st.text_input("👤 Nombre de usuario")
+        nueva_contraseña = st.text_input("🔑 Contraseña", type="password")
+
+        if st.button("Crear usuario"):
+            if nuevo_usuario and nueva_contraseña:
+                st.success(f"✅ Usuario '{nuevo_usuario}' creado correctamente.")
+            else:
+                st.warning("⚠️ Completa todos los campos para crear un usuario.")
+
+    # ==============================
+    # BOTÓN DE CIERRE DE SESIÓN
+    # ==============================
+    if st.sidebar.button("🚪 Cerrar sesión"):
+        st.session_state.clear()
+        st.experimental_rerun()
