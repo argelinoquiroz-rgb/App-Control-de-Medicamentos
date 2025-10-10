@@ -2,9 +2,10 @@ import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime
-from io import BytesIO
 
-# ---------------- CONFIGURACIÓN ----------------
+# ==============================
+# CONFIGURACIÓN INICIAL
+# ==============================
 st.set_page_config(page_title="Control de Estado de Medicamentos", layout="wide")
 
 # Crear carpetas necesarias
@@ -13,7 +14,9 @@ os.makedirs("assets", exist_ok=True)
 
 DATA_FILE = "registros_medicamentos.csv"
 
-# ---------------- FUNCIONES ----------------
+# ==============================
+# FUNCIONES AUXILIARES
+# ==============================
 def cargar_datos():
     if os.path.exists(DATA_FILE):
         return pd.read_csv(DATA_FILE)
@@ -31,17 +34,32 @@ def guardar_soporte(archivo):
         return file_path
     return None
 
-# ---------------- INTERFAZ DE USUARIO ----------------
+# ==============================
+# MENÚ LATERAL PRINCIPAL
+# ==============================
 st.sidebar.title("⚙️ Panel de Control")
 
-# Pestaña lateral con opciones
-opcion_panel = st.sidebar.radio("Selecciona una opción", ["Iniciar Sesión", "Registrar medicamento", "Registros guardados"])
+menu = st.sidebar.radio(
+    "Selecciona una opción",
+    ["Inicio de sesión", "Registrar medicamento", "Registros guardados"]
+)
+
+# Subpestaña en el panel lateral para crear usuarios
+with st.sidebar.expander("➕ Crear nuevo usuario"):
+    nuevo_usuario = st.text_input("Nuevo usuario", key="nuevo_usuario")
+    nueva_contraseña = st.text_input("Nueva contraseña", type="password", key="nueva_contraseña")
+    if st.button("Crear usuario"):
+        if nuevo_usuario and nueva_contraseña:
+            st.success(f"Usuario '{nuevo_usuario}' creado correctamente.")
+        else:
+            st.warning("Por favor completa todos los campos.")
 
 # ==============================
-# PESTAÑA: INICIO DE SESIÓN
+# 1️⃣ INICIO DE SESIÓN
 # ==============================
-if opcion_panel == "Iniciar Sesión":
+if menu == "Inicio de sesión":
     st.title("🔐 Inicio de Sesión")
+
     usuario = st.text_input("Usuario")
     contraseña = st.text_input("Contraseña", type="password")
 
@@ -51,20 +69,10 @@ if opcion_panel == "Iniciar Sesión":
         else:
             st.error("❌ Usuario o contraseña incorrectos.")
 
-    # Pestaña de creación de usuario dentro del panel lateral
-    with st.sidebar.expander("➕ Crear nuevo usuario"):
-        nuevo_usuario = st.text_input("Nuevo usuario")
-        nueva_contraseña = st.text_input("Nueva contraseña", type="password")
-        if st.button("Crear usuario"):
-            if nuevo_usuario and nueva_contraseña:
-                st.success(f"Usuario '{nuevo_usuario}' creado correctamente.")
-            else:
-                st.warning("Por favor completa todos los campos.")
-
 # ==============================
-# PESTAÑA: REGISTRAR MEDICAMENTO
+# 2️⃣ REGISTRAR MEDICAMENTO
 # ==============================
-elif opcion_panel == "Registrar medicamento":
+elif menu == "Registrar medicamento":
     st.title("💊 Registrar medicamento")
 
     # Estado en la parte superior
@@ -77,18 +85,21 @@ elif opcion_panel == "Registrar medicamento":
     estado = st.selectbox("Estado del medicamento", options=list(explicaciones_estado.keys()))
     st.info(explicaciones_estado[estado])
 
+    # Fecha automática (no editable)
     fecha = datetime.today().strftime("%Y-%m-%d")
     st.text_input("Fecha de registro", value=fecha, disabled=True)
 
+    # Datos del medicamento
     nombre = st.text_input("Nombre del medicamento")
     plu = st.text_input("PLU (Formato: 12345_ABC)")
 
-    # Extraer código genérico automáticamente
+    # Código Genérico automático
     codigo_generico = ""
     if "_" in plu:
         codigo_generico = plu.split("_")[0]
     codigo_generico = st.text_input("Código Genérico", value=codigo_generico, disabled=True)
 
+    # Subir soporte obligatorio
     soporte = st.file_uploader("📎 Subir soporte (obligatorio)", type=["pdf", "jpg", "png"])
 
     if st.button("💾 Guardar registro"):
@@ -112,17 +123,18 @@ elif opcion_panel == "Registrar medicamento":
             st.success("✅ Registro guardado correctamente.")
 
 # ==============================
-# PESTAÑA: REGISTROS GUARDADOS
+# 3️⃣ REGISTROS GUARDADOS
 # ==============================
-elif opcion_panel == "Registros guardados":
+elif menu == "Registros guardados":
     st.title("📋 Registros guardados")
 
     df = cargar_datos()
     if df.empty:
-        st.warning("No hay registros aún.")
+        st.warning("⚠️ No hay registros guardados.")
     else:
         st.dataframe(df, use_container_width=True)
 
+        # Botones de descarga de soporte
         for _, row in df.iterrows():
             if pd.notna(row["Soporte"]) and os.path.exists(row["Soporte"]):
                 with open(row["Soporte"], "rb") as f:
@@ -132,4 +144,3 @@ elif opcion_panel == "Registros guardados":
                         file_name=os.path.basename(row["Soporte"]),
                         mime="application/octet-stream"
                     )
-
