@@ -23,13 +23,12 @@ if "service_account" in st.secrets:
 # ---------------- GOOGLE DRIVE AUTH ----------------
 def authenticate_drive():
     """
-    Autenticación con Service Account, compatible con Streamlit Cloud.
+    Autenticación con Service Account usando archivo JSON.
+    Compatible con Streamlit Cloud.
     """
     gauth = GoogleAuth(settings={
         "client_config_backend": "service",
-        "service_config": {
-            "service_account_json_path": SERVICE_ACCOUNT_FILE
-        }
+        "service_config_file": SERVICE_ACCOUNT_FILE
     })
     gauth.ServiceAuth()
     drive = GoogleDrive(gauth)
@@ -194,7 +193,6 @@ def page_registros():
     else:
         df_filtered = df
 
-    # Mostrar datos sin columna soporte
     display_df = df_filtered.copy()
     display_df.drop(columns=["soporte"], inplace=True, errors='ignore')
     st.dataframe(display_df, use_container_width=True)
