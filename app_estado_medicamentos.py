@@ -9,33 +9,25 @@ from PIL import Image
 # ---------------- CONFIG ----------------
 st.set_page_config(page_title="Control de Estado de Medicamentos", page_icon="💊", layout="wide")
 
-# Si quieres forzar una ruta local específica, descomenta y ajusta la siguiente línea:
-# ONE_DRIVE_DIR = r"C:\Users\lidercompras\OneDrive - pharmaser.com.co\Documentos\Reportes\01_Informes Power BI\01_Analisis de Solicitudes y Ordenes de Compras\Actualiza Informes Phyton\control_estado_medicamentos"
-ONE_DRIVE_DIR = None  # o la ruta anterior si quieres forzarla
+# Ruta fija en OneDrive
+ONE_DRIVE_DIR = r"C:\Users\lidercompras\OneDrive - pharmaser.com.co\Documentos\Reportes\01_Informes Power BI\01_Analisis de Solicitudes y Ordenes de Compras\Actualiza Informes Phyton\control_estado_medicamentos"
 
-# Buscar ubicación de trabajo: primero cwd, luego ONE_DRIVE_DIR si existe allí.
-CANDIDATES = [os.getcwd()]
-if ONE_DRIVE_DIR:
-    CANDIDATES.append(ONE_DRIVE_DIR)
+# Crear carpeta base si no existe
+os.makedirs(ONE_DRIVE_DIR, exist_ok=True)
+BASE_DIR = ONE_DRIVE_DIR
 
-BASE_DIR = None
-for c in CANDIDATES:
-    if os.path.isdir(c):
-        BASE_DIR = c
-        break
-if BASE_DIR is None:
-    BASE_DIR = os.getcwd()
-
+# Archivos principales
 USERS_FILE = os.path.join(BASE_DIR, "usuarios.csv")
 DATA_FILE = os.path.join(BASE_DIR, "registros_medicamentos.csv")
 SOPORTES_DIR = os.path.join(BASE_DIR, "soportes")
-LOGO_CAND1 = os.path.join(BASE_DIR, "logo_empresa.png")
-LOGO_CAND2 = os.path.join(BASE_DIR, "assets", "logo_empresa.png")
+ASSETS_DIR = os.path.join(BASE_DIR, "assets")
+LOGO_PATH = os.path.join(ASSETS_DIR, "logo_empresa.png")
 
+# Crear carpetas necesarias
 os.makedirs(SOPORTES_DIR, exist_ok=True)
-os.makedirs(os.path.join(BASE_DIR, "assets"), exist_ok=True)
+os.makedirs(ASSETS_DIR, exist_ok=True)
 
-# ---------------- UTIL: usuarios robusto ----------------
+# ---------------- UTIL: usuarios ----------------
 def load_users():
     if not os.path.exists(USERS_FILE):
         pd.DataFrame({"usuario": ["admin"], "contrasena": ["250382"]}).to_csv(USERS_FILE, index=False)
@@ -102,15 +94,11 @@ def guess_mime(path):
 
 # ---------------- UI: login ----------------
 def show_logo_center():
-    for logo in [LOGO_CAND1, LOGO_CAND2]:
-        if os.path.exists(logo):
-            try:
-                img = Image.open(logo)
-                st.image(img, width=220)
-                return
-            except Exception:
-                continue
-    st.markdown("<h3 style='text-align:center;'>💊</h3>", unsafe_allow_html=True)
+    if os.path.exists(LOGO_PATH):
+        img = Image.open(LOGO_PATH)
+        st.image(img, width=220)
+    else:
+        st.markdown("<h3 style='text-align:center;'>💊</h3>", unsafe_allow_html=True)
 
 def login_page():
     st.markdown("<div style='text-align:center; margin-top: 10px;'>", unsafe_allow_html=True)
@@ -132,18 +120,12 @@ def login_page():
                 st.success("✅ Inicio de sesión correcto.")
                 st.rerun()
             else:
-                st.error("❌ Usuario o contraseña incorrectos. Verifica usuarios.csv o crea uno nuevo.")
+                st.error("❌ Usuario o contraseña incorrectos.")
 
 # ---------------- UI: sidebar ----------------
 def app_sidebar():
-    # Logo lateral
-    for logo in [LOGO_CAND1, LOGO_CAND2]:
-        if os.path.exists(logo):
-            try:
-                st.sidebar.image(logo, width=150)
-                break
-            except Exception:
-                continue
+    if os.path.exists(LOGO_PATH):
+        st.sidebar.image(LOGO_PATH, width=150)
 
     st.sidebar.markdown(f"**👤 Usuario:** `{st.session_state.get('usuario','')}`")
     st.sidebar.markdown("---")
@@ -182,7 +164,6 @@ def page_inicio():
 def page_registrar():
     st.title("➕ Registrar medicamento")
 
-    # Explicaciones con íconos y colores
     explicaciones_estado = {
         "Agotado": "🟡 **Agotado:** El medicamento no está disponible temporalmente en el inventario interno, pero sí existe en el mercado y puede ser adquirido nuevamente por el proveedor o distribuidor.",
         "Desabastecido": "🔴 **Desabastecido:** El medicamento no se encuentra disponible ni en el inventario interno ni en el mercado nacional. Existen dificultades en su producción, importación o distribución.",
@@ -209,9 +190,6 @@ def page_registrar():
 
     soporte = st.file_uploader("📎 Subir soporte (OBLIGATORIO) — PDF/JPG/PNG", type=["pdf", "jpg", "jpeg", "png"], key="soporte_input")
 
-    if "guardado_flag" not in st.session_state:
-        st.session_state["guardado_flag"] = False
-
     if st.button("💾 Guardar registro"):
         if not (plu and nombre and soporte):
             st.error("Debes completar PLU, Nombre y subir el soporte.")
@@ -232,7 +210,6 @@ def page_registrar():
             append_record(registro)
             st.success("✅ Registro guardado correctamente.")
             st.info(f"Soporte guardado en: `{ruta_soporte}`")
-            st.session_state["guardado_flag"] = True
 
 def page_registros():
     st.title("📂 Registros guardados")
