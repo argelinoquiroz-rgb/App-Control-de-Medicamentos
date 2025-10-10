@@ -1,36 +1,34 @@
 import streamlit as st
+import os
 import json
+import mimetypes
+import pandas as pd
+from datetime import datetime
 from pydrive2.auth import GoogleAuth
 from pydrive2.drive import GoogleDrive
 
-# Graba el secreto como archivo JSON
-if "service_account" in st.secrets:
-    creds = dict(st.secrets["service_account"])
-    with open("service_account.json", "w") as f:
-        json.dump(creds, f)
-
-def authenticate_drive():
-    gauth = GoogleAuth(settings={
-        "client_config_backend": "service",
-        "service_config": {
-            "service_account_json_path": "service_account.json"
-        }
-    })
-    gauth.ServiceAuth()
-    drive = GoogleDrive(gauth)
-    return drive
 # ---------------- CONFIG ----------------
 st.set_page_config(page_title="Control de Estado de Medicamentos", page_icon="💊", layout="wide")
 
 # ---------------- GOOGLE DRIVE SETTINGS ----------------
-GOOGLE_DRIVE_FOLDER_ID = "1itzZF2zLNLmGEDm-ok8FD_rhadaIUM_Z"  # <--- tu carpeta de Google Drive
+GOOGLE_DRIVE_FOLDER_ID = "1itzZF2zLNLmGEDm-ok8FD_rhadaIUM_Z"  # Carpeta de Google Drive
+SERVICE_ACCOUNT_FILE = "service_account.json"
 
 # ---------------- GOOGLE DRIVE AUTH ----------------
+# Graba el secreto como archivo JSON
+if "service_account" in st.secrets:
+    creds = dict(st.secrets["service_account"])
+    with open(SERVICE_ACCOUNT_FILE, "w") as f:
+        json.dump(creds, f)
+
 def authenticate_drive():
+    """
+    Autenticación con Google Drive usando service account.
+    Compatible con Streamlit Cloud.
+    """
     gauth = GoogleAuth()
-    # Forzar a PyDrive2 a usar el archivo de cuenta de servicio generado arriba
     gauth.settings['client_config_backend'] = 'service'
-    gauth.settings['service_config_filepath'] = "credentials.json"
+    gauth.settings['service_config'] = {"service_account_json_path": SERVICE_ACCOUNT_FILE}
     gauth.ServiceAuth()
     drive = GoogleDrive(gauth)
     return drive
@@ -91,10 +89,6 @@ def save_support_file(uploaded_file, consecutivo, nombre, drive, folder_id):
 
     download_url = f"https://drive.google.com/uc?id={file_drive['id']}&export=download"
     return download_url
-
-def guess_mime(path):
-    mime, _ = mimetypes.guess_type(path)
-    return mime or "application/octet-stream"
 
 # ---------------- SIDEBAR LOGIN/REGISTER ----------------
 def sidebar_login():
