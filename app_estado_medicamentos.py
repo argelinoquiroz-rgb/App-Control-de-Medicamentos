@@ -9,7 +9,7 @@ from PIL import Image
 # ---------------- CONFIG ----------------
 st.set_page_config(page_title="Control de Estado de Medicamentos", page_icon="💊", layout="wide")
 
-# Ruta fija en OneDrive
+# Ruta fija en OneDrive (NO se muestra al usuario)
 ONE_DRIVE_DIR = r"C:\Users\lidercompras\OneDrive - pharmaser.com.co\Documentos\Reportes\01_Informes Power BI\01_Analisis de Solicitudes y Ordenes de Compras\Actualiza Informes Phyton\control_estado_medicamentos"
 
 # Crear carpeta base si no existe
@@ -58,11 +58,11 @@ def load_users():
 def save_user(username, password):
     df = load_users()
     if username.lower().strip() in df["usuario"].values:
-        return False, "Usuario ya existe"
+        return False, "⚠️ El usuario ya existe."
     new = pd.DataFrame({"usuario": [username.lower().strip()], "contrasena": [password.strip()]})
     df = pd.concat([df, new], ignore_index=True)
     df.to_csv(USERS_FILE, index=False)
-    return True, "Usuario creado correctamente ✅"
+    return True, "✅ Usuario creado correctamente."
 
 # ---------------- UTIL: registros ----------------
 def load_records():
@@ -81,7 +81,7 @@ def append_record(record: dict):
     df.to_csv(DATA_FILE, index=False)
 
 def save_support_file(uploaded_file):
-    ts = datetime.now().strftime("%Y%m%d%H%M%S")
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_name = f"{ts}_{uploaded_file.name.replace(' ', '_')}"
     path = os.path.join(SOPORTES_DIR, safe_name)
     with open(path, "wb") as f:
@@ -158,8 +158,6 @@ def app_sidebar():
 def page_inicio():
     st.title("🏠 Inicio")
     st.info("Bienvenido al sistema de control de estado de medicamentos. Usa el menú lateral para navegar.")
-    st.write("📂 Ruta base usada para archivos:")
-    st.code(BASE_DIR)
 
 def page_registrar():
     st.title("➕ Registrar medicamento")
@@ -171,28 +169,28 @@ def page_registrar():
     }
 
     estado = st.selectbox("Estado del medicamento", list(explicaciones_estado.keys()))
-    st.info(explicaciones_estado[estado])
+    st.markdown(explicaciones_estado[estado], unsafe_allow_html=True)
 
     fecha_actual = datetime.now().date()
     st.date_input("📅 Fecha de registro", value=fecha_actual, disabled=True)
 
     col1, col2 = st.columns(2)
     with col1:
-        plu = st.text_input("🔢 PLU (ej. 12345_ABC)", key="plu_input").strip().upper()
+        plu = st.text_input("🔢 PLU (ej. 12345_ABC)").strip().upper()
     with col2:
         codigo_gen = plu.split("_")[0] if "_" in plu else ""
         st.text_input("🧬 Código Genérico", value=codigo_gen, disabled=True)
 
-    nombre = st.text_input("💊 Nombre comercial", key="nombre_input").strip().upper()
-    laboratorio = st.text_input("🏭 Laboratorio", key="lab_input").strip().upper()
-    presentacion = st.text_input("📦 Presentación", key="pres_input").strip()
-    observaciones = st.text_area("📝 Observaciones", key="obs_input").strip()
+    nombre = st.text_input("💊 Nombre comercial").strip().upper()
+    laboratorio = st.text_input("🏭 Laboratorio").strip().upper()
+    presentacion = st.text_input("📦 Presentación").strip()
+    observaciones = st.text_area("📝 Observaciones").strip()
 
-    soporte = st.file_uploader("📎 Subir soporte (OBLIGATORIO) — PDF/JPG/PNG", type=["pdf", "jpg", "jpeg", "png"], key="soporte_input")
+    soporte = st.file_uploader("📎 Subir soporte (OBLIGATORIO) — PDF/JPG/PNG", type=["pdf", "jpg", "jpeg", "png"])
 
     if st.button("💾 Guardar registro"):
         if not (plu and nombre and soporte):
-            st.error("Debes completar PLU, Nombre y subir el soporte.")
+            st.error("❌ Debes completar PLU, Nombre y subir el soporte.")
         else:
             ruta_soporte = save_support_file(soporte)
             registro = {
@@ -209,7 +207,6 @@ def page_registrar():
             }
             append_record(registro)
             st.success("✅ Registro guardado correctamente.")
-            st.info(f"Soporte guardado en: `{ruta_soporte}`")
 
 def page_registros():
     st.title("📂 Registros guardados")
@@ -227,13 +224,13 @@ def page_registros():
         soporte_path = row.get("soporte", "")
         if isinstance(soporte_path, str) and os.path.exists(soporte_path):
             mime = guess_mime(soporte_path)
-            label = f"📥 Descargar: {os.path.basename(soporte_path)} — {row.get('nombre_comercial','')}"
+            label = f"📥 {row.get('nombre_comercial','')} - Descargar soporte"
             with open(soporte_path, "rb") as f:
                 data_bytes = f.read()
             st.download_button(label=label, data=data_bytes,
                                file_name=os.path.basename(soporte_path), mime=mime)
         else:
-            st.warning(f"Soporte no encontrado para registro {idx}")
+            st.warning(f"⚠️ Soporte no encontrado para registro {idx + 1}")
 
 def page_gestion_usuarios():
     st.title("👥 Gestión de usuarios")
@@ -256,4 +253,3 @@ else:
         page_registros()
     elif menu == "Gestión de usuarios":
         page_gestion_usuarios()
-
