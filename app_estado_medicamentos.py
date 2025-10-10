@@ -1,20 +1,24 @@
 import streamlit as st
-import pandas as pd
-import os
-from datetime import datetime
-import mimetypes
-from PIL import Image
+import json
 from pydrive2.auth import GoogleAuth
 from pydrive2.drive import GoogleDrive
-import json
 
-# ---------------------- SECRETS TO FILE FOR GOOGLE DRIVE AUTH (for Streamlit Cloud) ----------------------
+# Graba el secreto como archivo JSON
 if "service_account" in st.secrets:
-    # Convertir a dict y guardar como JSON plano
     creds = dict(st.secrets["service_account"])
-    with open("credentials.json", "w") as f:
+    with open("service_account.json", "w") as f:
         json.dump(creds, f)
 
+def authenticate_drive():
+    gauth = GoogleAuth(settings={
+        "client_config_backend": "service",
+        "service_config": {
+            "service_account_json_path": "service_account.json"
+        }
+    })
+    gauth.ServiceAuth()
+    drive = GoogleDrive(gauth)
+    return drive
 # ---------------- CONFIG ----------------
 st.set_page_config(page_title="Control de Estado de Medicamentos", page_icon="💊", layout="wide")
 
