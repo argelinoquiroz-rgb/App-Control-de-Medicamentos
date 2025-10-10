@@ -9,7 +9,7 @@ from PIL import Image
 st.set_page_config(page_title="Control de Estado de Medicamentos", page_icon="💊", layout="wide")
 
 # Ruta fija en OneDrive
-ONE_DRIVE_DIR = r"C:\Users\lidercompras\OneDrive - pharmaser.com.co\Documentos\Reportes\01_Informes Power BI\01_Analisis de Solicitudes y Ordenes de Compras\Actualiza Informes Phyton\control_estado_medicamentos\soportes"
+ONE_DRIVE_DIR = r"C:\Users\lidercompras\OneDrive - pharmaser.com.co\Documentos\Reportes\01_Informes Power BI\01_Analisis de Solicitudes y Ordenes de Compras\Actualiza Informes Phyton\control_estado_me[...]"
 
 os.makedirs(ONE_DRIVE_DIR, exist_ok=True)
 BASE_DIR = ONE_DRIVE_DIR
@@ -93,7 +93,7 @@ def sidebar_login():
                 st.session_state["usuario"] = usuario.strip().lower()
                 st.session_state["logged_in"] = True
                 st.success("✅ Inicio de sesión correcto.")
-                st.experimental_rerun()
+                st.rerun()  # Cambiado de st.experimental_rerun()
             else:
                 st.sidebar.error("❌ Usuario o contraseña incorrectos.")
     else:  # Crear usuario
@@ -217,7 +217,7 @@ else:
     if st.sidebar.button("Cerrar sesión"):
         st.session_state["logged_in"] = False
         st.session_state["usuario"] = ""
-        st.experimental_rerun()
+        st.rerun()  # Cambiado de st.experimental_rerun()
     seleccion = main_menu()
     if seleccion == "Registrar medicamento":
         page_registrar()
