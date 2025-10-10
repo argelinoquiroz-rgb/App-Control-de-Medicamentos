@@ -10,8 +10,9 @@ import json
 
 # ---------------------- SECRETS TO FILE FOR GOOGLE DRIVE AUTH (for Streamlit Cloud) ----------------------
 if "service_account" in st.secrets:
+    creds = dict(st.secrets["service_account"])
     with open("credentials.json", "w") as f:
-        json.dump(st.secrets["service_account"], f)
+        json.dump(creds, f)
 
 # ---------------- CONFIG ----------------
 st.set_page_config(page_title="Control de Estado de Medicamentos", page_icon="💊", layout="wide")
