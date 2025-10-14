@@ -7,7 +7,6 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from datetime import datetime
 
-# Ruta del archivo de credenciales de servicio
 SERVICE_ACCOUNT_FILE = "service_account.json"
 
 # --- FUNCIÓN PARA SUBIR PDF A GOOGLE DRIVE ---
@@ -23,18 +22,17 @@ def upload_to_drive(file_path, file_name, folder_id=None):
     if folder_id:
         file_metadata["parents"] = [folder_id]
 
-    media = open(file_path, "rb")
-    uploaded = service.files().create(
-        body=file_metadata,
-        media_body=media,
-        fields="id"
-    ).execute()
-    media.close()
+    with open(file_path, "rb") as media:
+        uploaded = service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields="id"
+        ).execute()
 
     file_id = uploaded.get("id")
     return f"https://drive.google.com/file/d/{file_id}/view"
 
-# --- FUNCIÓN PARA GENERAR EL PDF ---
+# --- FUNCIÓN PARA GENERAR PDF ROBUSTA ---
 def generar_pdf(datos, ruta_pdf):
     pdf = FPDF()
     pdf.add_page()
@@ -44,11 +42,17 @@ def generar_pdf(datos, ruta_pdf):
     pdf.ln(10)
 
     for campo, valor in datos.items():
-        pdf.multi_cell(0, 10, f"{campo}: {valor}")
+        texto = f"{campo}: {valor}"
+        # Limpiar caracteres problemáticos y asegurar ancho válido
+        texto = str(texto).encode('latin-1', 'replace').decode('latin-1')
+        # Dividir líneas largas artificialmente si no hay espacios
+        if len(texto) > 90 and " " not in texto:
+            texto = "\n".join(texto[i:i+90] for i in range(0, len(texto), 90))
+        pdf.multi_cell(0, 10, texto)
 
     pdf.output(ruta_pdf)
 
-# --- FUNCIÓN PRINCIPAL DEL FORMULARIO ---
+# --- FORMULARIO ---
 def page_registrar():
     st.title("Registro de Medicamentos")
 
@@ -76,6 +80,7 @@ def page_registrar():
             "Observaciones": observaciones
         }
 
+        # Crear PDF temporal
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmpfile:
             generar_pdf(datos, tmpfile.name)
             drive_url = upload_to_drive(tmpfile.name, f"{nombre}.pdf")
