@@ -13,23 +13,22 @@ from pydrive2.drive import GoogleDrive
 st.set_page_config(page_title="Control de Medicamentos", layout="wide")
 st.title("💊 Control de Estado de Medicamentos")
 
-# Carpeta de destino en Google Drive (usa tu ID real)
+# ID de la carpeta en tu Google Drive
 GOOGLE_DRIVE_FOLDER_ID = "170gsnvdzcFzPy0Ub5retzhQ4Auin00LW"
 SERVICE_ACCOUNT_FILE = "service_account.json"
 ARCHIVO_USUARIOS = "usuarios.csv"
 
 # ------------------------------------------------------------
-# VERIFICAR Y CARGAR CREDENCIALES
+# VERIFICAR CREDENCIALES
 # ------------------------------------------------------------
 def verificar_credenciales():
     if not os.path.exists(SERVICE_ACCOUNT_FILE):
-        st.error("❌ No se encontró el archivo de credenciales (service_account.json).")
+        st.error("❌ No se encontró el archivo 'service_account.json'.")
         st.stop()
     try:
         with open(SERVICE_ACCOUNT_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-        claves_requeridas = ["type", "client_email", "private_key", "token_uri"]
-        for clave in claves_requeridas:
+        for clave in ["type", "client_email", "private_key", "token_uri"]:
             if clave not in data:
                 st.error(f"❌ Falta la clave '{clave}' en las credenciales.")
                 st.stop()
@@ -38,33 +37,22 @@ def verificar_credenciales():
         st.stop()
 
 # ------------------------------------------------------------
-# AUTENTICACIÓN CON GOOGLE DRIVE
+# AUTENTICACIÓN CON GOOGLE DRIVE (versión corregida)
 # ------------------------------------------------------------
 def authenticate_drive():
     verificar_credenciales()
     try:
         gauth = GoogleAuth()
-        gauth.settings = {
+        gauth.LoadServiceConfigSettings = lambda: None  # evita lectura de settings.yaml
+        gauth.ServiceAuth(settings={
             "client_config_backend": "service",
             "service_config": {
-                "client_service_email": None,  # se completará desde archivo
-                "client_user_email": None,
-                "client_config_file": SERVICE_ACCOUNT_FILE
+                "service_account_file": SERVICE_ACCOUNT_FILE
             },
             "oauth_scope": ["https://www.googleapis.com/auth/drive"]
-        }
-
-        # Cargar credenciales del archivo
-        with open(SERVICE_ACCOUNT_FILE, "r", encoding="utf-8") as f:
-            creds = json.load(f)
-        gauth.service_account_email = creds["client_email"]
-        gauth.auth_method = "service"
-        gauth.LoadServiceConfigSettings = lambda: None
-        gauth.ServiceAuth()
-
+        })
         drive = GoogleDrive(gauth)
         return drive
-
     except Exception as e:
         st.error(f"⚠️ Error autenticando con Google Drive: {e}")
         st.stop()
