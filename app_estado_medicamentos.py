@@ -37,6 +37,7 @@ def verificar_credenciales():
             if key not in data:
                 st.error(f"❌ Falta la clave '{key}' en las credenciales.")
                 st.stop()
+        return data
     except Exception as e:
         st.error(f"❌ Error leyendo credenciales: {e}")
         st.stop()
@@ -46,18 +47,18 @@ def verificar_credenciales():
 # AUTENTICAR CON GOOGLE DRIVE (CUENTA DE SERVICIO)
 # ------------------------------------------------------------
 def authenticate_drive():
-    verificar_credenciales()
+    data = verificar_credenciales()
     try:
         gauth = GoogleAuth()
-        # Se configura directamente el diccionario con la información del service account
         gauth.settings = {
             "client_config_backend": "service",
             "service_config": {
-                "client_json_file_path": SERVICE_ACCOUNT_FILE
+                "client_json_file_path": SERVICE_ACCOUNT_FILE,
+                "client_user_email": data["client_email"]  # 🔥 obligatorio para PyDrive2
             },
             "oauth_scope": ["https://www.googleapis.com/auth/drive"]
         }
-        gauth.ServiceAuth()  # Autenticación directa
+        gauth.ServiceAuth()
         return GoogleDrive(gauth)
     except Exception as e:
         st.error(f"⚠️ Error autenticando con Google Drive: {e}")
