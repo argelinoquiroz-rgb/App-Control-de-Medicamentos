@@ -43,18 +43,28 @@ def verificar_credenciales():
 
 
 # ------------------------------------------------------------
-# AUTENTICAR CON GOOGLE DRIVE
+# AUTENTICAR CON GOOGLE DRIVE (MODO SERVICIO)
 # ------------------------------------------------------------
 def authenticate_drive():
     verificar_credenciales()
     try:
-        gauth = GoogleAuth(settings={
-            "client_config_backend": "service",
-            "service_config_file": SERVICE_ACCOUNT_FILE,
-            "oauth_scope": ["https://www.googleapis.com/auth/drive"]
-        })
+        # Se crea archivo settings.yaml temporal compatible con PyDrive2
+        SETTINGS_FILE = "settings.yaml"
+        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+            f.write("""
+client_config_backend: service
+service_config:
+  client_json_file_path: service_account.json
+oauth_scope:
+  - https://www.googleapis.com/auth/drive
+            """.strip())
+
+        gauth = GoogleAuth()
+        gauth.LoadSettingsFile(SETTINGS_FILE)
         gauth.ServiceAuth()
-        return GoogleDrive(gauth)
+        drive = GoogleDrive(gauth)
+        return drive
+
     except Exception as e:
         st.error(f"⚠️ Error autenticando con Google Drive: {e}")
         st.stop()
