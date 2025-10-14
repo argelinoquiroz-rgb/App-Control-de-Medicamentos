@@ -1,227 +1,230 @@
 import streamlit as st
-import pandas as pd
-import json
 import os
+import json
+import pandas as pd
 from datetime import datetime
-from fpdf import FPDF
 from pydrive2.auth import GoogleAuth
 from pydrive2.drive import GoogleDrive
 
-# ------------------------------------------------------------
-# CONFIGURACIÓN INICIAL
-# ------------------------------------------------------------
-st.set_page_config(page_title="Control de Medicamentos", layout="wide")
-st.title("💊 Control de Estado de Medicamentos")
+# ---------------- CONFIG ----------------
+st.set_page_config(page_title="Control de Estado de Medicamentos", page_icon="💊", layout="wide")
 
-GOOGLE_DRIVE_FOLDER_ID = "1itzZF2zLNLmGEDm-ok8FD_rhadaIUM_Z"
+# ---------------- GOOGLE DRIVE SETTINGS ----------------
+GOOGLE_DRIVE_FOLDER_ID = "1itzZF2zLNLmGEDm-ok8FD_rhadaIUM_Z"  # Carpeta de Google Drive
 SERVICE_ACCOUNT_FILE = "service_account.json"
-ARCHIVO_USUARIOS = "usuarios.csv"
 
-# ------------------------------------------------------------
-# CARGAR CREDENCIALES GOOGLE DRIVE
-# ------------------------------------------------------------
+# Guardar el secreto de Service Account como JSON (para Streamlit Cloud)
 if "service_account" in st.secrets:
     creds = dict(st.secrets["service_account"])
-    with open(SERVICE_ACCOUNT_FILE, "w", encoding="utf-8") as f:
-        json.dump(creds, f, ensure_ascii=False, indent=2)
+    with open(SERVICE_ACCOUNT_FILE, "w") as f:
+        json.dump(creds, f)
 
-
-def verificar_credenciales():
-    if not os.path.exists(SERVICE_ACCOUNT_FILE):
-        st.error("❌ No se encontró el archivo de credenciales.")
-        st.stop()
-    try:
-        with open(SERVICE_ACCOUNT_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        for key in ["type", "client_email", "private_key", "token_uri"]:
-            if key not in data:
-                st.error(f"❌ Falta la clave '{key}' en las credenciales.")
-                st.stop()
-    except Exception as e:
-        st.error(f"❌ Error leyendo credenciales: {e}")
-        st.stop()
-
-
-# ------------------------------------------------------------
-# AUTENTICAR CON GOOGLE DRIVE
-# ------------------------------------------------------------
+# ---------------- GOOGLE DRIVE AUTH ----------------
 def authenticate_drive():
-    verificar_credenciales()
-    try:
-        gauth = GoogleAuth(settings={
-            "client_config_backend": "service",
-            "service_config_file": SERVICE_ACCOUNT_FILE,
-            "oauth_scope": ["https://www.googleapis.com/auth/drive"]
-        })
-        gauth.ServiceAuth()
-        return GoogleDrive(gauth)
-    except Exception as e:
-        st.error(f"⚠️ Error autenticando con Google Drive: {e}")
-        st.stop()
+    gauth = GoogleAuth(settings={
+        "client_config_backend": "service",
+        "service_config_file": SERVICE_ACCOUNT_FILE
+    })
+    gauth.ServiceAuth()
+    return GoogleDrive(gauth)
 
+# ---------------- UTILIDADES ----------------
+def load_users():
+    if not os.path.exists("usuarios.csv"):
+        pd.DataFrame({"usuario": ["admin"], "contrasena": ["250382"]}).to_csv("usuarios.csv", index=False)
+    df = pd.read_csv("usuarios.csv", dtype=str)
+    df.columns = [c.strip().lower().replace("ñ", "n") for c in df.columns]
+    df["usuario"] = df["usuario"].astype(str).str.strip().str.lower()
+    df["contrasena"] = df["contrasena"].astype(str).str.strip()
+    return df[["usuario", "contrasena"]]
 
-# ------------------------------------------------------------
-# USUARIOS: CARGA, CREACIÓN Y VALIDACIÓN
-# ------------------------------------------------------------
-def cargar_usuarios():
-    if not os.path.exists(ARCHIVO_USUARIOS):
-        df = pd.DataFrame({"usuario": ["admin"], "contrasena": ["250382"]})
-        df.to_csv(ARCHIVO_USUARIOS, index=False)
-    return pd.read_csv(ARCHIVO_USUARIOS, dtype=str)
+def save_user(username, password):
+    df = load_users()
+    if username.lower().strip() in df["usuario"].values:
+        return False, "Usuario ya existe"
+    new = pd.DataFrame({"usuario": [username.lower().strip()], "contrasena": [password.strip()]})
+    df = pd.concat([df, new], ignore_index=True)
+    df.to_csv("usuarios.csv", index=False)
+    return True, "Usuario creado correctamente ✅"
 
+def load_records():
+    cols = [
+        "consecutivo", "fecha_hora", "usuario", "estado", "plu", "codigo_generico",
+        "nombre_comercial", "laboratorio", "proveedor", "unidad_medida",
+        "stock_minimo", "tipo_compra", "fecha_vencimiento", "observaciones", "soporte"
+    ]
+    if os.path.exists("registros_medicamentos.csv"):
+        df = pd.read_csv("registros_medicamentos.csv", dtype=str)
+        for c in cols:
+            if c not in df.columns:
+                df[c] = ""
+        df = df[cols]
+    else:
+        df = pd.DataFrame(columns=cols)
+        df.to_csv("registros_medicamentos.csv", index=False)
+    df.fillna("", inplace=True)
+    return df
 
-def guardar_usuario(usuario, contrasena):
-    df = cargar_usuarios()
-    if usuario.lower().strip() in df["usuario"].str.lower().values:
-        return False, "⚠️ El usuario ya existe."
-    nuevo = pd.DataFrame({"usuario": [usuario], "contrasena": [contrasena]})
-    df = pd.concat([df, nuevo], ignore_index=True)
-    df.to_csv(ARCHIVO_USUARIOS, index=False)
-    return True, "✅ Usuario creado correctamente."
+def append_record(record: dict):
+    df = load_records()
+    df = pd.concat([df, pd.DataFrame([record])], ignore_index=True)
+    df.to_csv("registros_medicamentos.csv", index=False)
 
+def save_support_file(uploaded_file, consecutivo, nombre, drive, folder_id):
+    ext = os.path.splitext(uploaded_file.name)[1]
+    safe_name = f"{consecutivo}_{nombre.replace(' ', '_')}{ext}"
+    temp_path = f"temp_{safe_name}"
+    with open(temp_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
+    file_drive = drive.CreateFile({'title': safe_name, "parents": [{"id": folder_id}]})
+    file_drive.SetContentFile(temp_path)
+    file_drive.Upload()
+    file_drive.InsertPermission({'type': 'anyone', 'value': 'anyone', 'role': 'reader'})
+    os.remove(temp_path)
+    return f"https://drive.google.com/uc?id={file_drive['id']}&export=download"
 
-def login(usuario, contrasena):
-    df = cargar_usuarios()
-    valid = ((df["usuario"].str.lower() == usuario.lower()) & (df["contrasena"] == contrasena)).any()
-    return valid
+# ---------------- SIDEBAR LOGIN ----------------
+def sidebar_login():
+    st.sidebar.title("Control de Medicamentos 💊")
+    menu = st.sidebar.radio("Acción", ["Iniciar sesión", "Crear usuario"], horizontal=True)
 
+    if menu == "Iniciar sesión":
+        usuario = st.sidebar.text_input("Usuario")
+        contrasena = st.sidebar.text_input("Contraseña", type="password")
+        if st.sidebar.button("Iniciar sesión"):
+            users = load_users()
+            match = ((users["usuario"] == usuario.strip().lower()) &
+                     (users["contrasena"] == contrasena.strip())).any()
+            if match:
+                st.session_state["usuario"] = usuario.strip().lower()
+                st.session_state["logged_in"] = True
+                st.rerun()
+            else:
+                st.sidebar.error("❌ Usuario o contraseña incorrectos.")
+    else:
+        nuevo_usuario = st.sidebar.text_input("Nuevo usuario")
+        nueva_contrasena = st.sidebar.text_input("Nueva contraseña", type="password")
+        if st.sidebar.button("Crear usuario"):
+            ok, msg = save_user(nuevo_usuario, nueva_contrasena)
+            if ok:
+                st.sidebar.success(msg)
+            else:
+                st.sidebar.error(msg)
 
-# ------------------------------------------------------------
-# FUNCIONES AUXILIARES
-# ------------------------------------------------------------
-def upload_to_drive(file_path, file_name):
-    try:
-        drive = authenticate_drive()
-        gfile = drive.CreateFile({
-            "title": file_name,
-            "parents": [{"id": GOOGLE_DRIVE_FOLDER_ID}]
-        })
-        gfile.SetContentFile(file_path)
-        gfile.Upload()
-        gfile.InsertPermission({'type': 'anyone', 'value': 'anyone', 'role': 'reader'})
-        link = f"https://drive.google.com/uc?id={gfile['id']}&export=download"
-        return link
-    except Exception as e:
-        st.error(f"❌ Error al subir a Google Drive: {e}")
-        return None
+# ---------------- MENÚ SUPERIOR ----------------
+def main_menu():
+    opciones = ["Registrar medicamento", "Registros guardados"]
+    if st.session_state.get("usuario") == "admin":
+        opciones.append("Gestión de usuarios")
+    return st.radio("Seleccione una opción", opciones, horizontal=True)
 
+# ---------------- PÁGINAS ----------------
+def page_registrar():
+    st.title("➕ Registrar medicamento")
 
-def generar_pdf(medicamento, estado, fecha, consecutivo):
-    nombre_archivo = f"{consecutivo}_{medicamento.replace(' ', '_')}.pdf"
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", "B", 16)
-    pdf.cell(0, 10, "Reporte de Estado de Medicamento", ln=True, align="C")
-    pdf.ln(10)
-    pdf.set_font("Arial", "", 12)
-    pdf.cell(0, 10, f"Medicamento: {medicamento}", ln=True)
-    pdf.cell(0, 10, f"Estado: {estado}", ln=True)
-    pdf.cell(0, 10, f"Fecha: {fecha}", ln=True)
-    pdf.cell(0, 10, f"Consecutivo: {consecutivo}", ln=True)
-    pdf.output(nombre_archivo)
-    return nombre_archivo
+    estados = {
+        "Agotado": "🟡 Agotado: No disponible temporalmente en inventario interno.",
+        "Desabastecido": "🔴 Desabastecido: No disponible en inventario ni mercado nacional.",
+        "Descontinuado": "⚫ Descontinuado: Retirado del mercado definitivamente."
+    }
+    estado = st.selectbox("Estado del medicamento", list(estados.keys()))
+    st.info(estados[estado])
 
+    fecha_actual = datetime.now().date()
+    st.date_input("📅 Fecha de registro", value=fecha_actual, disabled=True)
 
-# ------------------------------------------------------------
-# PÁGINAS DE LA APLICACIÓN
-# ------------------------------------------------------------
-def page_registrar(usuario):
-    st.header("➕ Registrar nuevo medicamento")
-    with st.form("registro_form"):
-        medicamento = st.text_input("💊 Nombre del medicamento").strip()
-        estado = st.selectbox("⚕️ Estado", ["Disponible", "Agotado", "Desabastecido", "Descontinuado"])
-        enviado = st.form_submit_button("Guardar registro")
+    col1, col2 = st.columns(2)
+    with col1:
+        plu = st.text_input("🔢 PLU").strip().upper()
+    with col2:
+        codigo_gen = plu.split("_")[0] if "_" in plu else ""
+        st.text_input("🧬 Código Genérico", value=codigo_gen, disabled=True)
 
-    if enviado:
-        if not medicamento:
-            st.warning("⚠️ Ingresa el nombre del medicamento.")
-            return
-        fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        archivo = "registros_medicamentos.csv"
+    nombre = st.text_input("💊 Nombre comercial").strip().upper()
+    laboratorio = st.text_input("🏭 Laboratorio").strip().upper()
+    proveedor = st.text_input("🚚 Proveedor principal").strip().upper()
+    unidad_medida = st.text_input("⚖️ Unidad de medida").strip().upper()
+    stock_minimo = st.number_input("📦 Stock mínimo o crítico", min_value=0, step=1)
+    tipo_compra = st.selectbox("💰 Tipo de compra", ["Directa", "Licitación", "Urgencia"])
+    fecha_vencimiento = st.date_input("📅 Fecha de vencimiento")
+    observaciones = st.text_area("📝 Observaciones").strip()
+    soporte = st.file_uploader("📎 Subir soporte (OBLIGATORIO) — PDF/JPG/PNG", type=["pdf","jpg","jpeg","png"])
 
-        if os.path.exists(archivo):
-            df = pd.read_csv(archivo)
-            consecutivo = len(df) + 1
+    if st.button("💾 Guardar registro"):
+        if not (plu and nombre and soporte):
+            st.error("Debes completar PLU, Nombre y subir el soporte.")
         else:
-            df = pd.DataFrame(columns=["Consecutivo", "Usuario", "Medicamento", "Estado", "Fecha", "PDF"])
-            consecutivo = 1
+            df = load_records()
+            consecutivo = len(df) + 1
+            drive = authenticate_drive()
+            ruta_soporte = save_support_file(soporte, consecutivo, nombre, drive, GOOGLE_DRIVE_FOLDER_ID)
 
-        pdf_name = generar_pdf(medicamento, estado, fecha, consecutivo)
-        link = upload_to_drive(pdf_name, pdf_name)
-
-        nuevo = pd.DataFrame([{
-            "Consecutivo": consecutivo,
-            "Usuario": usuario,
-            "Medicamento": medicamento,
-            "Estado": estado,
-            "Fecha": fecha,
-            "PDF": link
-        }])
-
-        df = pd.concat([df, nuevo], ignore_index=True)
-        df.to_csv(archivo, index=False, encoding="utf-8-sig")
-        st.success("✅ Registro guardado correctamente.")
-        if link:
-            st.markdown(f"[📥 Descargar PDF en Drive]({link})")
-
+            registro = {
+                "consecutivo": consecutivo,
+                "fecha_hora": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "usuario": st.session_state.get("usuario", ""),
+                "estado": estado,
+                "plu": plu,
+                "codigo_generico": codigo_gen,
+                "nombre_comercial": nombre,
+                "laboratorio": laboratorio,
+                "proveedor": proveedor,
+                "unidad_medida": unidad_medida,
+                "stock_minimo": stock_minimo,
+                "tipo_compra": tipo_compra,
+                "fecha_vencimiento": fecha_vencimiento,
+                "observaciones": observaciones,
+                "soporte": ruta_soporte
+            }
+            append_record(registro)
+            st.success("✅ Registro guardado correctamente.")
 
 def page_registros():
-    st.header("📁 Registros guardados")
-    archivo = "registros_medicamentos.csv"
-    if not os.path.exists(archivo):
-        st.info("Aún no hay registros.")
+    st.title("📂 Registros guardados")
+    df = load_records()
+    if df.empty:
+        st.info("No hay registros guardados aún.")
         return
-    df = pd.read_csv(archivo)
-    buscar = st.text_input("🔍 Buscar medicamento o estado")
-    if buscar:
-        df = df[df.apply(lambda r: buscar.lower() in str(r).lower(), axis=1)]
-    st.dataframe(df, use_container_width=True)
 
+    busqueda = st.text_input("🔍 Buscar registro por cualquier campo")
+    if busqueda:
+        mask = df.apply(lambda row: row.astype(str).str.contains(busqueda, case=False, na=False).any(), axis=1)
+        df_filtered = df[mask]
+    else:
+        df_filtered = df
+
+    display_df = df_filtered.copy()
+    display_df.drop(columns=["soporte"], inplace=True, errors='ignore')
+    st.dataframe(display_df, use_container_width=True)
+
+    st.markdown("### ⬇️ Descarga de soportes")
+    for _, row in df_filtered.iterrows():
+        soporte_url = row.get("soporte", "")
+        if soporte_url:
+            st.markdown(f"<a href='{soporte_url}' target='_blank'>📥 Descargar {row.get('nombre_comercial', '')}</a>", unsafe_allow_html=True)
 
 def page_gestion_usuarios():
-    st.header("👥 Gestión de usuarios")
-    st.subheader("Crear nuevo usuario")
-    nuevo_usuario = st.text_input("Usuario")
-    nueva_contrasena = st.text_input("Contraseña", type="password")
-    if st.button("Crear usuario"):
-        ok, msg = guardar_usuario(nuevo_usuario, nueva_contrasena)
-        st.info(msg)
-    st.subheader("Usuarios actuales")
-    st.dataframe(cargar_usuarios(), use_container_width=True)
+    st.title("👥 Gestión de usuarios")
+    users_df = load_users()
+    st.dataframe(users_df, use_container_width=True)
 
+# ---------------- FLUJO PRINCIPAL ----------------
+if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
 
-# ------------------------------------------------------------
-# INTERFAZ PRINCIPAL
-# ------------------------------------------------------------
-if "usuario" not in st.session_state:
-    st.session_state["usuario"] = None
-
-if not st.session_state["usuario"]:
-    st.sidebar.header("🔐 Inicio de sesión")
-    user = st.sidebar.text_input("Usuario")
-    pwd = st.sidebar.text_input("Contraseña", type="password")
-    if st.sidebar.button("Iniciar sesión"):
-        if login(user, pwd):
-            st.session_state["usuario"] = user
-            st.sidebar.success("✅ Sesión iniciada.")
-            st.rerun()
-        else:
-            st.sidebar.error("❌ Usuario o contraseña incorrectos.")
+if not st.session_state["logged_in"]:
+    sidebar_login()
 else:
-    usuario = st.session_state["usuario"]
-    st.sidebar.markdown(f"👤 **Usuario:** {usuario}")
+    st.sidebar.markdown(f"👤 Usuario: **{st.session_state.get('usuario','')}**")
     if st.sidebar.button("Cerrar sesión"):
-        st.session_state["usuario"] = None
+        st.session_state["logged_in"] = False
+        st.session_state["usuario"] = ""
         st.rerun()
 
-    menu = ["Registrar medicamento", "Ver registros"]
-    if usuario.lower() == "admin":
-        menu.append("Gestión de usuarios")
-    opcion = st.sidebar.radio("Menú principal", menu)
-
-    if opcion == "Registrar medicamento":
-        page_registrar(usuario)
-    elif opcion == "Ver registros":
+    seleccion = main_menu()
+    if seleccion == "Registrar medicamento":
+        page_registrar()
+    elif seleccion == "Registros guardados":
         page_registros()
-    elif opcion == "Gestión de usuarios":
+    elif seleccion == "Gestión de usuarios":
         page_gestion_usuarios()
