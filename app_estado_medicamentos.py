@@ -6,7 +6,7 @@ from datetime import datetime
 from fpdf import FPDF
 from pydrive2.auth import GoogleAuth
 from pydrive2.drive import GoogleDrive
-
+pip install fpdf2
 # ------------------------------------------------------------
 # CONFIGURACIÓN INICIAL
 # ------------------------------------------------------------
