@@ -1,120 +1,95 @@
 import streamlit as st
+import pandas as pd
 from fpdf import FPDF
 import tempfile
 import os
-from datetime import date
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
+from datetime import datetime
 
-# ----------------------------------------------------------
-# CONFIGURACIÓN DE GOOGLE DRIVE
-# ----------------------------------------------------------
-# Archivo JSON de cuenta de servicio (debes tenerlo en la misma carpeta del script)
-SERVICE_ACCOUNT_FILE = "credenciales.json"
+# Ruta del archivo de credenciales de servicio
+SERVICE_ACCOUNT_FILE = "service_account.json"
 
-# ID de la carpeta en Drive donde se subirán los PDFs
-# (puedes obtenerlo de la URL de la carpeta en Drive: https://drive.google.com/drive/folders/XXXXXXXX)
-FOLDER_ID = "TU_FOLDER_ID_AQUI"  # <-- reemplaza esto
-
-# ----------------------------------------------------------
-# FUNCIÓN: Subir archivo PDF a Google Drive
-# ----------------------------------------------------------
-def upload_to_drive(file_path, file_name):
-    # Cargar credenciales de cuenta de servicio
+# --- FUNCIÓN PARA SUBIR PDF A GOOGLE DRIVE ---
+def upload_to_drive(file_path, file_name, folder_id=None):
+    """Sube un archivo a Google Drive usando un servicio sin intervención humana"""
     creds = service_account.Credentials.from_service_account_file(
         SERVICE_ACCOUNT_FILE,
         scopes=["https://www.googleapis.com/auth/drive"]
     )
-
-    # Crear servicio de conexión con Google Drive
     service = build("drive", "v3", credentials=creds)
 
-    # Metadatos del archivo
-    file_metadata = {
-        "name": file_name,
-        "parents": [FOLDER_ID]
-    }
+    file_metadata = {"name": file_name}
+    if folder_id:
+        file_metadata["parents"] = [folder_id]
 
-    # Subida del archivo
-    media = MediaFileUpload(file_path, mimetype="application/pdf")
-    file = service.files().create(
+    media = open(file_path, "rb")
+    uploaded = service.files().create(
         body=file_metadata,
         media_body=media,
         fields="id"
     ).execute()
+    media.close()
 
-    return file.get("id")
+    file_id = uploaded.get("id")
+    return f"https://drive.google.com/file/d/{file_id}/view"
 
-# ----------------------------------------------------------
-# FUNCIÓN: Generar el PDF con los datos del medicamento
-# ----------------------------------------------------------
+# --- FUNCIÓN PARA GENERAR EL PDF ---
 def generar_pdf(datos, ruta_pdf):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.set_font("Arial", "B", 14)
-    pdf.cell(0, 10, "REGISTRO DE MEDICAMENTO", ln=True, align="C")
+    pdf.set_font("Arial", size=12)
+
+    pdf.cell(200, 10, txt="REGISTRO DE MEDICAMENTOS", ln=True, align="C")
     pdf.ln(10)
 
-    pdf.set_font("Arial", "", 12)
-    for clave, valor in datos.items():
-        texto = f"{clave}: {valor}"
-        pdf.multi_cell(0, 8, texto)
-        pdf.ln(2)
+    for campo, valor in datos.items():
+        pdf.multi_cell(0, 10, f"{campo}: {valor}")
 
     pdf.output(ruta_pdf)
 
-# ----------------------------------------------------------
-# FUNCIÓN PRINCIPAL DE STREAMLIT
-# ----------------------------------------------------------
+# --- FUNCIÓN PRINCIPAL DEL FORMULARIO ---
 def page_registrar():
-    st.title("📋 Registro de Medicamentos")
-    st.markdown("Complete la siguiente información para registrar un nuevo medicamento:")
+    st.title("Registro de Medicamentos")
 
-    # --- CAMPOS DEL FORMULARIO ---
-    nombre = st.text_input("Nombre del medicamento")
-    laboratorio = st.text_input("Laboratorio fabricante")
-    tipo = st.selectbox("Tipo de medicamento", ["Genérico", "Comercial"])
-    estado = st.selectbox("Estado del medicamento", ["Activo", "Inactivo", "Pendiente"])
-    cantidad = st.number_input("Cantidad disponible", min_value=0, step=1)
-    fecha_registro = st.date_input("Fecha de registro", value=date.today())
+    with st.form("form_registro"):
+        nombre = st.text_input("Nombre del medicamento")
+        codigo = st.text_input("Código interno")
+        laboratorio = st.text_input("Laboratorio")
+        fecha_registro = st.date_input("Fecha de registro", datetime.now().date())
+        cantidad = st.number_input("Cantidad disponible", min_value=0)
+        lote = st.text_input("Lote")
+        fecha_vencimiento = st.date_input("Fecha de vencimiento")
+        observaciones = st.text_area("Observaciones adicionales")
 
-    # --- BOTÓN PARA GUARDAR ---
-    if st.button("Guardar Registro"):
-        if not nombre:
-            st.error("Debe ingresar el nombre del medicamento.")
-            return
+        enviado = st.form_submit_button("Guardar Registro")
 
-        # Crear estructura de datos
+    if enviado:
         datos = {
-            "Nombre del medicamento": nombre,
+            "Nombre": nombre,
+            "Código Interno": codigo,
             "Laboratorio": laboratorio,
-            "Tipo": tipo,
-            "Estado": estado,
-            "Cantidad disponible": cantidad,
-            "Fecha de registro": fecha_registro.strftime("%Y-%m-%d")
+            "Fecha de Registro": fecha_registro,
+            "Cantidad Disponible": cantidad,
+            "Lote": lote,
+            "Fecha de Vencimiento": fecha_vencimiento,
+            "Observaciones": observaciones
         }
 
-        # Crear PDF temporal
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmpfile:
             generar_pdf(datos, tmpfile.name)
+            drive_url = upload_to_drive(tmpfile.name, f"{nombre}.pdf")
 
-            # Subir PDF a Google Drive
-            drive_id = upload_to_drive(tmpfile.name, f"{nombre}.pdf")
+        st.success("Registro guardado correctamente ✅")
+        st.markdown(f"[📄 Descargar PDF en Google Drive]({drive_url})")
 
-        # Mostrar resultado en la app
-        st.success(f"✅ Medicamento '{nombre}' registrado exitosamente.")
-        st.markdown(f"📄 [Abrir PDF en Google Drive](https://drive.google.com/file/d/{drive_id}/view)")
-
-# ----------------------------------------------------------
-# FUNCIÓN MAIN
-# ----------------------------------------------------------
+# --- MAIN ---
 def main():
-    page_registrar()
+    st.sidebar.title("Menú Principal")
+    opcion = st.sidebar.radio("Selecciona una opción", ["Registrar Medicamento"])
 
-# ----------------------------------------------------------
-# EJECUCIÓN
-# ----------------------------------------------------------
+    if opcion == "Registrar Medicamento":
+        page_registrar()
+
 if __name__ == "__main__":
     main()
