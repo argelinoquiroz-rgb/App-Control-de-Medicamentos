@@ -13,67 +13,70 @@ from pydrive2.drive import GoogleDrive
 st.set_page_config(page_title="Control de Medicamentos", layout="wide")
 st.title("💊 Control de Estado de Medicamentos")
 
-GOOGLE_DRIVE_FOLDER_ID = "1itzZF2zLNLmGEDm-ok8FD_rhadaIUM_Z"
+# Carpeta de destino en Google Drive (usa tu ID real)
+GOOGLE_DRIVE_FOLDER_ID = "170gsnvdzcFzPy0Ub5retzhQ4Auin00LW"
 SERVICE_ACCOUNT_FILE = "service_account.json"
 ARCHIVO_USUARIOS = "usuarios.csv"
 
 # ------------------------------------------------------------
-# CARGAR CREDENCIALES GOOGLE DRIVE
+# VERIFICAR Y CARGAR CREDENCIALES
 # ------------------------------------------------------------
-if "service_account" in st.secrets:
-    creds = dict(st.secrets["service_account"])
-    with open(SERVICE_ACCOUNT_FILE, "w", encoding="utf-8") as f:
-        json.dump(creds, f, ensure_ascii=False, indent=2)
-
-
 def verificar_credenciales():
     if not os.path.exists(SERVICE_ACCOUNT_FILE):
-        st.error("❌ No se encontró el archivo de credenciales.")
+        st.error("❌ No se encontró el archivo de credenciales (service_account.json).")
         st.stop()
     try:
         with open(SERVICE_ACCOUNT_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-        for key in ["type", "client_email", "private_key", "token_uri"]:
-            if key not in data:
-                st.error(f"❌ Falta la clave '{key}' en las credenciales.")
+        claves_requeridas = ["type", "client_email", "private_key", "token_uri"]
+        for clave in claves_requeridas:
+            if clave not in data:
+                st.error(f"❌ Falta la clave '{clave}' en las credenciales.")
                 st.stop()
-        return data
     except Exception as e:
         st.error(f"❌ Error leyendo credenciales: {e}")
         st.stop()
 
-
 # ------------------------------------------------------------
-# AUTENTICAR CON GOOGLE DRIVE (CUENTA DE SERVICIO)
+# AUTENTICACIÓN CON GOOGLE DRIVE
 # ------------------------------------------------------------
 def authenticate_drive():
-    data = verificar_credenciales()
+    verificar_credenciales()
     try:
         gauth = GoogleAuth()
         gauth.settings = {
             "client_config_backend": "service",
             "service_config": {
-                "client_json_file_path": SERVICE_ACCOUNT_FILE,
-                "client_user_email": data["client_email"]  # 🔥 obligatorio para PyDrive2
+                "client_service_email": None,  # se completará desde archivo
+                "client_user_email": None,
+                "client_config_file": SERVICE_ACCOUNT_FILE
             },
             "oauth_scope": ["https://www.googleapis.com/auth/drive"]
         }
+
+        # Cargar credenciales del archivo
+        with open(SERVICE_ACCOUNT_FILE, "r", encoding="utf-8") as f:
+            creds = json.load(f)
+        gauth.service_account_email = creds["client_email"]
+        gauth.auth_method = "service"
+        gauth.LoadServiceConfigSettings = lambda: None
         gauth.ServiceAuth()
-        return GoogleDrive(gauth)
+
+        drive = GoogleDrive(gauth)
+        return drive
+
     except Exception as e:
         st.error(f"⚠️ Error autenticando con Google Drive: {e}")
         st.stop()
 
-
 # ------------------------------------------------------------
-# USUARIOS: CARGA, CREACIÓN Y VALIDACIÓN
+# GESTIÓN DE USUARIOS
 # ------------------------------------------------------------
 def cargar_usuarios():
     if not os.path.exists(ARCHIVO_USUARIOS):
         df = pd.DataFrame({"usuario": ["admin"], "contrasena": ["250382"]})
         df.to_csv(ARCHIVO_USUARIOS, index=False)
     return pd.read_csv(ARCHIVO_USUARIOS, dtype=str)
-
 
 def guardar_usuario(usuario, contrasena):
     df = cargar_usuarios()
@@ -84,12 +87,10 @@ def guardar_usuario(usuario, contrasena):
     df.to_csv(ARCHIVO_USUARIOS, index=False)
     return True, "✅ Usuario creado correctamente."
 
-
 def login(usuario, contrasena):
     df = cargar_usuarios()
     valid = ((df["usuario"].str.lower() == usuario.lower()) & (df["contrasena"] == contrasena)).any()
     return valid
-
 
 # ------------------------------------------------------------
 # FUNCIONES AUXILIARES
@@ -103,13 +104,16 @@ def upload_to_drive(file_path, file_name):
         })
         gfile.SetContentFile(file_path)
         gfile.Upload()
-        gfile.InsertPermission({'type': 'anyone', 'value': 'anyone', 'role': 'reader'})
+        gfile.InsertPermission({
+            "type": "anyone",
+            "value": "anyone",
+            "role": "reader"
+        })
         link = f"https://drive.google.com/uc?id={gfile['id']}&export=download"
         return link
     except Exception as e:
-        st.error(f"❌ Error al subir a Google Drive: {e}")
+        st.error(f"❌ Error al subir archivo a Google Drive: {e}")
         return None
-
 
 def generar_pdf(medicamento, estado, fecha, consecutivo):
     nombre_archivo = f"{consecutivo}_{medicamento.replace(' ', '_')}.pdf"
@@ -125,7 +129,6 @@ def generar_pdf(medicamento, estado, fecha, consecutivo):
     pdf.cell(0, 10, f"Consecutivo: {consecutivo}", ln=True)
     pdf.output(nombre_archivo)
     return nombre_archivo
-
 
 # ------------------------------------------------------------
 # PÁGINAS DE LA APLICACIÓN
@@ -169,7 +172,6 @@ def page_registrar(usuario):
         if link:
             st.markdown(f"[📥 Descargar PDF en Drive]({link})")
 
-
 def page_registros():
     st.header("📁 Registros guardados")
     archivo = "registros_medicamentos.csv"
@@ -182,7 +184,6 @@ def page_registros():
         df = df[df.apply(lambda r: buscar.lower() in str(r).lower(), axis=1)]
     st.dataframe(df, use_container_width=True)
 
-
 def page_gestion_usuarios():
     st.header("👥 Gestión de usuarios")
     st.subheader("Crear nuevo usuario")
@@ -193,7 +194,6 @@ def page_gestion_usuarios():
         st.info(msg)
     st.subheader("Usuarios actuales")
     st.dataframe(cargar_usuarios(), use_container_width=True)
-
 
 # ------------------------------------------------------------
 # INTERFAZ PRINCIPAL
