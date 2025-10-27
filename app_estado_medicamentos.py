@@ -1,220 +1,199 @@
-import streamlit as st
-import pandas as pd
-import json
 import os
 from datetime import datetime
-from fpdf import FPDF
-from pydrive2.auth import GoogleAuth
-from pydrive2.drive import GoogleDrive
+import pandas as pd
+import streamlit as st
+from PIL import Image
+from google.oauth2.service_account import Credentials
+import gspread
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
+import io
 
-# ------------------------------------------------------------
-# CONFIGURACIÓN INICIAL
-# ------------------------------------------------------------
-st.set_page_config(page_title="Control de Medicamentos", layout="wide")
-st.title("💊 Control de Estado de Medicamentos")
+# --- CONFIGURACIÓN DE PÁGINA ---
+st.set_page_config(
+    page_title="Control de Medicamentos - Pharmaser",
+    page_icon="💊",
+    layout="wide"
+)
 
-# ID de la carpeta en tu Google Drive
-GOOGLE_DRIVE_FOLDER_ID = "170gsnvdzcFzPy0Ub5retzhQ4Auin00LW"
-SERVICE_ACCOUNT_FILE = "service_account.json"
-ARCHIVO_USUARIOS = "usuarios.csv"
+# --- ESTILOS PERSONALIZADOS ---
+st.markdown("""
+<style>
+div.block-container { padding-top: 0.5rem !important; padding-bottom: 0.5rem !important; }
+.stTextInput, .stSelectbox, .stFileUploader, .stButton { margin-bottom: 0.2rem !important; padding: 0 !important; }
+h1, h2, h3, h4 { margin-top: 0.2rem !important; margin-bottom: 0.2rem !important; }
+button[kind="primary"] { height: 2rem !important; padding: 0.2rem 0.8rem !important; font-size: 0.85rem !important; }
+p, label, span { font-size: 0.9rem !important; }
+div[data-baseweb="select"] > div { flex-direction: column !important; }
+.logo-container { display: flex; justify-content: center; align-items: center; margin-top: -0.5rem; margin-bottom: 0.1rem; }
+.titulo-principal { text-align: center; font-weight: 600; margin-top: 0 !important; margin-bottom: 0.2rem !important; }
+hr { margin-top: 0.4rem !important; margin-bottom: 0.4rem !important; }
+</style>
+""", unsafe_allow_html=True)
 
-# ------------------------------------------------------------
-# VERIFICAR CREDENCIALES
-# ------------------------------------------------------------
-def verificar_credenciales():
-    if not os.path.exists(SERVICE_ACCOUNT_FILE):
-        st.error("❌ No se encontró el archivo 'service_account.json'.")
-        st.stop()
+# --- CONFIG GOOGLE SHEETS / DRIVE ---
+SERVICE_ACCOUNT_FILE = r"C:\Users\lidercompras\OneDrive - pharmaser.com.co\Escritorio\App_Control_Medicamentos\credenciales.json"
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets',
+          'https://www.googleapis.com/auth/drive']
+creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+client = gspread.authorize(creds)
+drive_service = build('drive', 'v3', credentials=creds)
+
+SHEET_ID = "TU_ID_DE_GOOGLE_SHEET"  # <--- reemplaza por tu Sheet
+SHEET_NAME = "Registros"
+USERS_SHEET = "Usuarios"
+DRIVE_FOLDER_ID = "TU_ID_CARPETA_DRIVE"  # <--- reemplaza por tu carpeta de PDFs
+
+# --- FUNCIONES GOOGLE SHEETS ---
+def load_data():
     try:
-        with open(SERVICE_ACCOUNT_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        for clave in ["type", "client_email", "private_key", "token_uri"]:
-            if clave not in data:
-                st.error(f"❌ Falta la clave '{clave}' en las credenciales.")
-                st.stop()
-    except Exception as e:
-        st.error(f"❌ Error leyendo credenciales: {e}")
-        st.stop()
+        sheet = client.open_by_key(SHEET_ID).worksheet(SHEET_NAME)
+        data = sheet.get_all_records()
+        df = pd.DataFrame(data)
+        return df
+    except:
+        return pd.DataFrame(columns=[
+            "consecutivo","estado","plu","codigo_generico","nombre","presentacion",
+            "laboratorio","fecha_creacion","soporte","usuario_creacion"
+        ])
 
-# ------------------------------------------------------------
-# AUTENTICACIÓN CON GOOGLE DRIVE (versión corregida)
-# ------------------------------------------------------------
-def authenticate_drive():
-    verificar_credenciales()
+def save_data(df):
     try:
-        gauth = GoogleAuth()
-        gauth.LoadServiceConfigSettings = lambda: None  # evita lectura de settings.yaml
-        gauth.ServiceAuth(settings={
-            "client_config_backend": "service",
-            "service_config": {
-                "service_account_file": SERVICE_ACCOUNT_FILE
-            },
-            "oauth_scope": ["https://www.googleapis.com/auth/drive"]
-        })
-        drive = GoogleDrive(gauth)
-        return drive
+        sheet = client.open_by_key(SHEET_ID).worksheet(SHEET_NAME)
+        sheet.clear()
+        sheet.update([df.columns.values.tolist()] + df.values.tolist())
     except Exception as e:
-        st.error(f"⚠️ Error autenticando con Google Drive: {e}")
-        st.stop()
+        st.error(f"Error guardando datos en Google Sheets: {e}")
 
-# ------------------------------------------------------------
-# GESTIÓN DE USUARIOS
-# ------------------------------------------------------------
-def cargar_usuarios():
-    if not os.path.exists(ARCHIVO_USUARIOS):
-        df = pd.DataFrame({"usuario": ["admin"], "contrasena": ["250382"]})
-        df.to_csv(ARCHIVO_USUARIOS, index=False)
-    return pd.read_csv(ARCHIVO_USUARIOS, dtype=str)
-
-def guardar_usuario(usuario, contrasena):
-    df = cargar_usuarios()
-    if usuario.lower().strip() in df["usuario"].str.lower().values:
-        return False, "⚠️ El usuario ya existe."
-    nuevo = pd.DataFrame({"usuario": [usuario], "contrasena": [contrasena]})
-    df = pd.concat([df, nuevo], ignore_index=True)
-    df.to_csv(ARCHIVO_USUARIOS, index=False)
-    return True, "✅ Usuario creado correctamente."
-
-def login(usuario, contrasena):
-    df = cargar_usuarios()
-    valid = ((df["usuario"].str.lower() == usuario.lower()) & (df["contrasena"] == contrasena)).any()
-    return valid
-
-# ------------------------------------------------------------
-# FUNCIONES AUXILIARES
-# ------------------------------------------------------------
-def upload_to_drive(file_path, file_name):
+def load_users():
     try:
-        drive = authenticate_drive()
-        gfile = drive.CreateFile({
-            "title": file_name,
-            "parents": [{"id": GOOGLE_DRIVE_FOLDER_ID}]
-        })
-        gfile.SetContentFile(file_path)
-        gfile.Upload()
-        gfile.InsertPermission({
-            "type": "anyone",
-            "value": "anyone",
-            "role": "reader"
-        })
-        link = f"https://drive.google.com/uc?id={gfile['id']}&export=download"
-        return link
+        sheet = client.open_by_key(SHEET_ID).worksheet(USERS_SHEET)
+        data = sheet.get_all_records()
+        return pd.DataFrame(data)
+    except:
+        return pd.DataFrame(columns=["correo","nombres","apellidos","cargo","usuario","password"])
+
+def save_users(df):
+    try:
+        sheet = client.open_by_key(SHEET_ID).worksheet(USERS_SHEET)
+        sheet.clear()
+        sheet.update([df.columns.values.tolist()] + df.values.tolist())
     except Exception as e:
-        st.error(f"❌ Error al subir archivo a Google Drive: {e}")
-        return None
+        st.error(f"Error guardando usuarios: {e}")
 
-def generar_pdf(medicamento, estado, fecha, consecutivo):
-    nombre_archivo = f"{consecutivo}_{medicamento.replace(' ', '_')}.pdf"
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", "B", 16)
-    pdf.cell(0, 10, "Reporte de Estado de Medicamento", ln=True, align="C")
-    pdf.ln(10)
-    pdf.set_font("Arial", "", 12)
-    pdf.cell(0, 10, f"Medicamento: {medicamento}", ln=True)
-    pdf.cell(0, 10, f"Estado: {estado}", ln=True)
-    pdf.cell(0, 10, f"Fecha: {fecha}", ln=True)
-    pdf.cell(0, 10, f"Consecutivo: {consecutivo}", ln=True)
-    pdf.output(nombre_archivo)
-    return nombre_archivo
+# --- SUBIDA DE ARCHIVOS A DRIVE ---
+def subir_pdf_drive(file, nombre_archivo):
+    media = MediaIoBaseUpload(io.BytesIO(file.read()), mimetype='application/pdf')
+    file_metadata = {"name": nombre_archivo, "parents": [DRIVE_FOLDER_ID]}
+    uploaded_file = drive_service.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
+    return uploaded_file.get('webViewLink')  # Devuelve el link para abrir en Drive
 
-# ------------------------------------------------------------
-# PÁGINAS DE LA APLICACIÓN
-# ------------------------------------------------------------
-def page_registrar(usuario):
-    st.header("➕ Registrar nuevo medicamento")
-    with st.form("registro_form"):
-        medicamento = st.text_input("💊 Nombre del medicamento").strip()
-        estado = st.selectbox("⚕️ Estado", ["Disponible", "Agotado", "Desabastecido", "Descontinuado"])
-        enviado = st.form_submit_button("Guardar registro")
+# --- LOGO ---
+def mostrar_encabezado():
+    logo_path = r"C:\Users\lidercompras\OneDrive - pharmaser.com.co\Escritorio\App_Control_Medicamentos\logo_pharmaser.png"
+    if os.path.exists(logo_path):
+        st.markdown('<div class="logo-container">', unsafe_allow_html=True)
+        st.image(Image.open(logo_path), width=250)
+        st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('<h2 class="titulo-principal">Sistema de Control de Medicamentos - Pharmaser</h2>', unsafe_allow_html=True)
+    st.divider()
 
-    if enviado:
-        if not medicamento:
-            st.warning("⚠️ Ingresa el nombre del medicamento.")
-            return
-        fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        archivo = "registros_medicamentos.csv"
+# --- LOGIN / REGISTRO ---
+def login():
+    mostrar_encabezado()
+    tab_login, tab_register = st.tabs(["Iniciar sesión","Registrar usuario"])
+    users = load_users()
 
-        if os.path.exists(archivo):
-            df = pd.read_csv(archivo)
-            consecutivo = len(df) + 1
-        else:
-            df = pd.DataFrame(columns=["Consecutivo", "Usuario", "Medicamento", "Estado", "Fecha", "PDF"])
-            consecutivo = 1
+    with tab_login:
+        usuario = st.text_input("Usuario", key="login_usuario").upper()
+        password = st.text_input("Password", type="password", key="login_password")
+        if st.button("Ingresar", key="btn_ingresar"):
+            if not users.empty and (users["usuario"].str.upper() == usuario).any():
+                user_row = users[users["usuario"].str.upper() == usuario].iloc[0]
+                if str(user_row["password"]) == password:
+                    st.session_state["usuario"] = user_row["usuario"]
+                    st.session_state["nombre"] = user_row["nombres"]
+                    st.session_state["apellido"] = user_row["apellidos"]
+                    st.rerun()
+                else:
+                    st.error("Password incorrecto")
+            else:
+                st.error("Usuario no encontrado")
 
-        pdf_name = generar_pdf(medicamento, estado, fecha, consecutivo)
-        link = upload_to_drive(pdf_name, pdf_name)
+    with tab_register:
+        st.subheader("Registrar Usuario")
+        col1,col2 = st.columns(2)
+        with col1:
+            nombres = st.text_input("Nombres").upper()
+            cargo = st.text_input("Cargo").upper()
+            usuario_new = st.text_input("Nombre de usuario").upper()
+        with col2:
+            apellidos = st.text_input("Apellidos").upper()
+            correo = st.text_input("Correo (@pharmaser.com.co)").lower()
+            password_new = st.text_input("Password", type="password")
+        if st.button("Crear usuario"):
+            if not all([nombres, apellidos, cargo, usuario_new, correo, password_new]):
+                st.error("Todos los campos son obligatorios")
+            elif not correo.endswith("@pharmaser.com.co"):
+                st.error("Correo no permitido")
+            elif usuario_new in users["usuario"].str.upper().values:
+                st.error("Usuario ya existe")
+            else:
+                new_user = pd.DataFrame([[correo,nombres,apellidos,cargo,usuario_new,password_new]], columns=users.columns)
+                users = pd.concat([users,new_user], ignore_index=True)
+                save_users(users)
+                st.success("Usuario creado ✅")
 
-        nuevo = pd.DataFrame([{
-            "Consecutivo": consecutivo,
-            "Usuario": usuario,
-            "Medicamento": medicamento,
-            "Estado": estado,
-            "Fecha": fecha,
-            "PDF": link
-        }])
-
-        df = pd.concat([df, nuevo], ignore_index=True)
-        df.to_csv(archivo, index=False, encoding="utf-8-sig")
-        st.success("✅ Registro guardado correctamente.")
-        if link:
-            st.markdown(f"[📥 Descargar PDF en Drive]({link})")
-
-def page_registros():
-    st.header("📁 Registros guardados")
-    archivo = "registros_medicamentos.csv"
-    if not os.path.exists(archivo):
-        st.info("Aún no hay registros.")
-        return
-    df = pd.read_csv(archivo)
-    buscar = st.text_input("🔍 Buscar medicamento o estado")
-    if buscar:
-        df = df[df.apply(lambda r: buscar.lower() in str(r).lower(), axis=1)]
-    st.dataframe(df, use_container_width=True)
-
-def page_gestion_usuarios():
-    st.header("👥 Gestión de usuarios")
-    st.subheader("Crear nuevo usuario")
-    nuevo_usuario = st.text_input("Usuario")
-    nueva_contrasena = st.text_input("Contraseña", type="password")
-    if st.button("Crear usuario"):
-        ok, msg = guardar_usuario(nuevo_usuario, nueva_contrasena)
-        st.info(msg)
-    st.subheader("Usuarios actuales")
-    st.dataframe(cargar_usuarios(), use_container_width=True)
-
-# ------------------------------------------------------------
-# INTERFAZ PRINCIPAL
-# ------------------------------------------------------------
-if "usuario" not in st.session_state:
-    st.session_state["usuario"] = None
-
-if not st.session_state["usuario"]:
-    st.sidebar.header("🔐 Inicio de sesión")
-    user = st.sidebar.text_input("Usuario")
-    pwd = st.sidebar.text_input("Contraseña", type="password")
-    if st.sidebar.button("Iniciar sesión"):
-        if login(user, pwd):
-            st.session_state["usuario"] = user
-            st.sidebar.success("✅ Sesión iniciada.")
-            st.rerun()
-        else:
-            st.sidebar.error("❌ Usuario o contraseña incorrectos.")
-else:
-    usuario = st.session_state["usuario"]
-    st.sidebar.markdown(f"👤 **Usuario:** {usuario}")
+# --- APP PRINCIPAL ---
+def main_app():
+    mostrar_encabezado()
+    st.sidebar.write(f"👋 Bienvenido {st.session_state['nombre']} {st.session_state['apellido']}")
     if st.sidebar.button("Cerrar sesión"):
-        st.session_state["usuario"] = None
+        st.session_state.clear()
         st.rerun()
 
-    menu = ["Registrar medicamento", "Ver registros"]
-    if usuario.lower() == "admin":
-        menu.append("Gestión de usuarios")
-    opcion = st.sidebar.radio("Menú principal", menu)
+    tab_registro, tab_reporte = st.tabs(["📝 Registrar Medicamento","📊 Reporte de Medicamentos"])
 
-    if opcion == "Registrar medicamento":
-        page_registrar(usuario)
-    elif opcion == "Ver registros":
-        page_registros()
-    elif opcion == "Gestión de usuarios":
-        page_gestion_usuarios()
+    with tab_registro:
+        st.subheader("📝 Registro de Medicamentos")
+        estado = st.selectbox("Estado", ["Agotado","Desabastecido","Descontinuado"])
+        plu = st.text_input("PLU").upper()
+        codigo_generico = plu.split("_")[0] if "_" in plu else ""
+        nombre = st.text_input("Nombre del Medicamento").upper()
+        presentacion = st.text_input("Presentación").upper()
+        laboratorio = st.text_input("Laboratorio").upper()
+        soporte = st.file_uploader("Adjuntar soporte (PDF, máx 200 KB)", type=["pdf"])
+
+        if st.button("Guardar Registro"):
+            if not all([estado,plu,nombre,presentacion,laboratorio,st.session_state["usuario"]]):
+                st.error("Todos los campos son obligatorios")
+            else:
+                df = load_data()
+                consecutivo = len(df)+1
+                fecha_creacion = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                soporte_link = ""
+                if soporte:
+                    if soporte.size > 200*1024:
+                        st.warning("Archivo supera 200KB")
+                    else:
+                        soporte_link = subir_pdf_drive(soporte, f"{consecutivo}_{nombre}.pdf")
+                nuevo = pd.DataFrame([[consecutivo,estado,plu,codigo_generico,nombre,presentacion,laboratorio,fecha_creacion,soporte_link,st.session_state["usuario"]]], columns=df.columns)
+                df = pd.concat([df,nuevo], ignore_index=True)
+                save_data(df)
+                st.success("💾 Registro guardado ✅")
+
+    with tab_reporte:
+        st.subheader("📊 Reporte de Medicamentos")
+        df = load_data()
+        if df.empty:
+            st.info("No hay registros")
+        else:
+            st.dataframe(df, use_container_width=True)
+            st.download_button("⬇️ Descargar CSV", data=df.to_csv(index=False).encode("utf-8"), file_name="reporte.csv", mime="text/csv")
+
+# --- EJECUCIÓN ---
+if "usuario" not in st.session_state:
+    login()
+else:
+    main_app()
+
